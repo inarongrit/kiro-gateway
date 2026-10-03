@@ -67,7 +67,9 @@ else
 fi
 chmod 755 "$NEW"/scripts/*.sh "$NEW"/scripts/kiro-via-gateway
 if [[ -d $APP ]]; then   # keep the state, replace the code
-  for f in .env pki data; do [[ -e $APP/$f ]] && mv "$APP/$f" "$NEW/"; done
+  for f in .env pki data; do
+    if [[ -e $APP/$f ]]; then mv "$APP/$f" "$NEW/"; fi
+  done
   rm -rf "$APP"
 fi
 mv "$NEW" "$APP"
@@ -118,11 +120,13 @@ if [[ ! -f data/.aws-initialized ]]; then
   mv data/guardrails.json.tmp data/guardrails.json && chmod 644 data/guardrails.json
   touch data/.aws-initialized
 fi
-chown -R 1000:1000 "$APP"   # the console container runs as uid 1000 (ec2-user)
 
 echo "== start"
 docker compose build -q
 docker compose up -d --wait --wait-timeout 300
 scripts/apply.sh
+# Last: everything above ran as root (apply.sh writes data/generated/); the console container
+# runs as uid 1000 (ec2-user) and must own the checkout to save rules.
+chown -R 1000:1000 "$APP"
 echo "bootstrap OK"
 signal 0

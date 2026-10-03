@@ -65,4 +65,6 @@ chmod 644 data/squid-allowed-clients.txt
 chmod 755 data; chmod 644 data/guardrails.json
 
 echo "init done. Next: docker compose up -d && scripts/apply.sh"
-[[ -f pki/console-initial-password ]] && echo "console sign-in: ${CONSOLE_USER:-admin} / password in pki/console-initial-password"
+if [[ -f pki/console-initial-password ]]; then
+  echo "console sign-in: ${CONSOLE_USER:-admin} / password in pki/console-initial-password"
+fi

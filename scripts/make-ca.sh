@@ -10,7 +10,7 @@ fi
 umask 077
 openssl req -x509 -new -nodes -newkey rsa:3072 -sha256 -days 365 \
   -keyout pki/ca.key -out pki/ca.crt \
-  -subj "/CN=Kiro Gateway Test CA/O=PoC" \
+  -subj "/CN=Kiro Gateway Test CA/O=Kiro Gateway" \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
   -addext "keyUsage=critical,keyCertSign,cRLSign"
 chmod 644 pki/ca.crt
