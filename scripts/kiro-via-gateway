@@ -48,6 +48,7 @@ case "${1:-status}" in
         if [[ -n "${!v+x}" ]]; then eval "_KGW_PREV_$v=\${$v}"; else eval "unset _KGW_PREV_$v"; fi
       done
     fi
+    # shellcheck disable=SC2163  # kv is "NAME=value": export it as given
     for kv in $(_kgw_env); do export "$kv"; done
     echo "kiro-gateway: ON  (proxy $_kgw_proxy, CA bundle pki/trust-bundle.pem). New kiro-cli sessions in this shell use the gateway."
     ;;

@@ -2,7 +2,7 @@
 # End-to-end verification of the Kiro gateway PoC. Re-runnable; prints PASS/FAIL per check.
 # Requires: stack up, kiro-cli logged in. Secrets are loaded internally and never printed.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 GW_DIR=$PWD; PROXY=http://127.0.0.1:3128; CA=pki/ca.crt; TOGGLE=scripts/kiro-via-gateway
 SCRATCH=${KIROCREW_SCRATCH:-${TMPDIR:-/tmp}}; fails=0
 pass() { printf 'PASS  %s\n' "$*"; }

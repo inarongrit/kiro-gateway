@@ -55,9 +55,9 @@ def check_source(request: Request) -> None:
     try:
         ip = ipaddress.ip_address(client_ip(request))
     except ValueError:
-        raise HTTPException(403, "Source not allowed")
+        raise HTTPException(403, "Source not allowed") from None
     if not any(ip in net for net in _ALLOW):
-        raise HTTPException(403, "Source not allowed")
+        raise HTTPException(403, "Source not allowed") from None
 
 
 def login(request: Request, username: str, password: str) -> str:

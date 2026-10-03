@@ -2,7 +2,7 @@
 # Guardrail Console API tests (run on the gateway host). Reads the console password from
 # pki/console-initial-password (never printed). Leaves rules exactly as it found them.
 set -uo pipefail
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 1
 B=${CONSOLE_URL:-https://127.0.0.1:9180}
 CA=pki/ca.crt; J=$(mktemp -d); trap 'rm -rf "$J"' EXIT
 fails=0; ok() { printf 'PASS  %s\n' "$*"; }; no() { printf 'FAIL  %s\n' "$*"; fails=$((fails+1)); }

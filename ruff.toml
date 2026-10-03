@@ -1,0 +1,18 @@
+# Lint config (CI: ruff check). Security rules (S) on; documented exceptions below.
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "B", "S"]
+ignore = [
+  "E501",   # long lines: the formatter is not enforced on this codebase
+  "S603",   # subprocess without shell: arguments are fixed lists, never user strings
+  "S607",   # partial executable paths (git, grep, scripts/*): resolved inside the pinned image
+  "S310",   # urllib URL schemes: only fixed internal service URLs are opened
+  "S108",   # HOME=/tmp: the containers are read-only with a private tmpfs at /tmp
+]
+
+[lint.per-file-ignores]
+"ml-guard/app.py" = ["S104"]          # binds 0.0.0.0 inside its container; callers are IP-allowlisted
+"monitoring/tests/*" = ["S311", "S602", "E401", "E702", "S101"]   # test harness, not shipped
+"docs/**" = ["S", "E"]

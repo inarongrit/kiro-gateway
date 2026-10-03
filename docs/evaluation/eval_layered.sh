@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Re-run the 48-prompt test set through the live ml-guard + current regex rules. Usage: V=3 bash docs/evaluation/eval_layered.sh
 # Results go to data/eval-results-bedrock-v$V.json (the repo is mounted read-only in the console).
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 1
 docker compose exec -T -e V="${V:-?}" console python3 - <<'PY'
 import json, re, urllib.request, unicodedata
 rules = [r for r in json.load(open('/gw/data/guardrails.json'))['rules'] if r['enabled'] and 'kiro' in r['applies_to']]

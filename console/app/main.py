@@ -102,11 +102,11 @@ def put_guardrails(body: SaveIn, request: Request, u: str = Depends(mutating)):
     try:
         data, ver, commit = rules.save(cfg, body.base_version, u, auth.client_ip(request))
     except rules.ConflictError as e:
-        raise HTTPException(409, str(e))
+        raise HTTPException(409, str(e)) from e
     except rules.ValidationFailed as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
     except rules.ApplyFailed as e:
-        raise HTTPException(502, f"Gateway rejected the change, nothing was saved. {e}")
+        raise HTTPException(502, f"Gateway rejected the change, nothing was saved. {e}") from e
     return {"config": data, "version": ver, "commit": commit}
 
 
@@ -183,11 +183,11 @@ def _obs(fn, *a):
     try:
         return fn(*a)
     except observe.BackendError as e:
-        raise HTTPException(503, f"Monitoring backend unavailable: {e}")
+        raise HTTPException(503, f"Monitoring backend unavailable: {e}") from e
     except LookupError:
-        raise HTTPException(404, "Not found (it may have aged out of retention)")
+        raise HTTPException(404, "Not found (it may have aged out of retention)") from None
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
 
 
 Hours = Query(24, gt=0, le=24 * 15)  # Prometheus retention is 15 days
@@ -280,7 +280,8 @@ async def grafana_proxy(request: Request, rest: str = ""):
     out = {k: v for k, v in rh.items() if k.lower() in _FWD_RESP}
     loc = out.get("Location") or out.get("location")
     if loc and "://" in loc:                             # Grafana builds absolute URLs from its own host
-        out.pop("Location", None); out.pop("location", None)
+        out.pop("Location", None)
+        out.pop("location", None)
         out["Location"] = "/" + loc.split("://", 1)[1].split("/", 1)[-1]
     return Response(content=data, status_code=status, headers=out)
 

@@ -1,0 +1,16 @@
+# The console image builds from the repo root: keep secrets, state and caches out of the context.
+.git
+.env
+.env.*
+pki/
+data/
+logs/
+dashboard/work/
+dashboard/dist/
+dashboard/.cache/
+**/__pycache__/
+**/node_modules/
+deploy/cdk.out/
+docs/
+*.pem
+*.key

@@ -1,0 +1,8 @@
+# Development override: serve a local portal build instead of the one inside the console image.
+#   scripts/dashboard.sh build      # -> dashboard/dist
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d console
+# Rebuild with scripts/dashboard.sh build and reload the browser; no image rebuild needed.
+services:
+  console:
+    volumes:
+      - ./dashboard/dist:/dashboard:ro

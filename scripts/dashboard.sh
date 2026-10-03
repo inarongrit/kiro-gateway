@@ -21,7 +21,7 @@ prepare() {
   "${GIT[@]}" fetch -q --depth 1 origin "$UPSTREAM_COMMIT"
   "${GIT[@]}" checkout -q -B kiro FETCH_HEAD
   "${GIT[@]}" tag -f upstream FETCH_HEAD >/dev/null
-  shopt -s nullglob; local patches=($D/patches/*.patch)
+  shopt -s nullglob; local patches=("$D"/patches/*.patch)
   if (( ${#patches[@]} )); then
     "${GIT[@]}" am -q --3way "${patches[@]/#/$PWD/}" || {
       echo "patch conflict: resolve in $W, then 'git -C $W am --continue' and run '$0 save'" >&2; exit 1; }

@@ -4,7 +4,7 @@ name: kiro-gateway
 
 services:
   etcd:
-    image: quay.io/coreos/etcd:v3.5.34
+    image: quay.io/coreos/etcd:v3.5.34@sha256:2c029095680c13c2b36116cc3935e1b0cddc0f5af78004457fd863616d8d072b
     restart: unless-stopped
     command:
       - etcd
@@ -26,7 +26,7 @@ services:
       retries: 20
 
   apisix:
-    image: apache/apisix:3.19.0-debian
+    image: apache/apisix:3.19.0-debian@sha256:9a7e45dc943fbf10ec916d1232bae4cda9302ae28a4696cfb83c2da01d261141
     restart: unless-stopped
     depends_on:
       etcd:
@@ -50,7 +50,7 @@ services:
         ipv4_address: 172.30.0.10   # fixed so Squid's hosts_file can target it
 
   squid:
-    image: ubuntu/squid:6.6-24.04_edge
+    image: ubuntu/squid:6.6-24.04_edge@sha256:8a3baed477e2c282ab8aa5edad442f69873246964f225c5c2ae8364b6610963c
     restart: unless-stopped
     depends_on: [apisix]
     volumes:
@@ -65,9 +65,13 @@ services:
     networks: [gw]
 
   console:
-    build: ./console
-    image: kiro-gateway-console:local
+    # Console API + the portal (forked dashboard built into the image). Released images:
+    # set KGW_CONSOLE_IMAGE=ghcr.io/<owner>/kiro-gateway-console:<version> and `docker compose pull`.
+    build: { context: ., dockerfile: console/Dockerfile }
+    image: ${KGW_CONSOLE_IMAGE:-kiro-gateway-console:local}
     restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
     depends_on: [apisix]
     user: "1000:1000"
     env_file: .env                     # admin key (for apply.sh) + CONSOLE_USER/CONSOLE_PASSWORD_HASH
@@ -90,7 +94,6 @@ services:
         tmpfs: { mode: 0755 }
       - ./pki/ca.crt:/gw/pki/ca.crt:ro
       - ./pki/admin:/tls:ro              # TLS cert/key for the console's HTTPS listener
-      - ./dashboard/dist:/dashboard:ro   # forked APISIX dashboard build (scripts/dashboard.sh build)
       - apisix-audit:/audit:ro
     ports:
       # The single public port (IPv4 only: docker-proxy hides client IPs on IPv6).
@@ -103,7 +106,7 @@ services:
   # No published port; accepts requests only from apisix (172.30.0.10) and console (172.30.0.20).
   ml-guard:
     build: ./ml-guard
-    image: kiro-gateway-ml-guard:local
+    image: ${KGW_ML_GUARD_IMAGE:-kiro-gateway-ml-guard:local}
     restart: unless-stopped
     environment:
       # Empty BEDROCK_GUARDRAIL_ID = layer not configured (checks answer 503; the gateway fails
@@ -120,7 +123,7 @@ services:
 
   # ---- monitoring (no published ports: reached only via the Docker network) -------------
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -132,7 +135,7 @@ services:
     networks: [gw]
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.161.0
+    image: otel/opentelemetry-collector-contrib:0.161.0@sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1
     restart: unless-stopped
     depends_on:
       volume-init:
@@ -145,7 +148,7 @@ services:
     networks: [gw]
 
   volume-init:                         # one-shot: hand fresh volumes to the uid 10001 services
-    image: busybox:1.37.0
+    image: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
     user: root
     command: ["chown", "-R", "10001:10001", "/var/tempo", "/var/lib/otelcol", "/loki"]
     volumes:
@@ -155,7 +158,7 @@ services:
     restart: "no"
 
   tempo:
-    image: grafana/tempo:2.10.1
+    image: grafana/tempo:2.10.1@sha256:9371af1b75b4e057eb77f22dc4dd4d9176cd6985e29f181527be6723b7f29c41
     restart: unless-stopped
     depends_on:
       volume-init:
@@ -167,7 +170,7 @@ services:
     networks: [gw]
 
   loki:
-    image: grafana/loki:3.7.1
+    image: grafana/loki:3.7.1@sha256:73e905b51a7f917f7a1075e4be68759df30226e03dcb3cd2213b989cc0dc8eb4
     restart: unless-stopped
     depends_on:
       volume-init:
@@ -179,7 +182,7 @@ services:
     networks: [gw]
 
   grafana:
-    image: grafana/grafana:12.4.2
+    image: grafana/grafana:12.4.2@sha256:83749231c3835e390a3144e5e940203e42b9589761f20ef3169c716e734ad505
     restart: unless-stopped
     depends_on: [prometheus, loki, tempo]
     environment:
