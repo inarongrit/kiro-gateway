@@ -1,0 +1,102 @@
+# OpenTelemetry Collector
+#   traces: APISIX (OTLP) -> Tempo
+#   logs:   APISIX audit log file (read-only volume) -> normalise -> Loki (OTLP)
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+  file_log/audit:
+    include: [/audit/kiro-audit.log]
+    start_at: beginning               # with file_storage, offsets survive restarts (no duplicates)
+    storage: file_storage
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.ts
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05Z07:00"
+
+processors:
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+  batch:
+    timeout: 2s
+
+  # Same classification as the Guardrail Console (console/app/audit.py), so dashboards and the
+  # console agree. Labels (low cardinality): path, result, rule, kind.
+  transform/audit:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(attributes["path"], "other")
+          - set(attributes["path"], "kiro") where IsMatch(attributes["host"], "^(runtime|q|management)\\.")
+          - set(attributes["path"], "ai") where IsMatch(attributes["uri"], "^/v1/")
+          - set(attributes["path"], "internal") where IsMatch(attributes["uri"], "^/__mock/")
+          - set(attributes["kind"], "background")
+          - set(attributes["kind"], "chat") where IsMatch(attributes["host"], "^runtime\\.") or attributes["path"] == "ai"
+          - set(attributes["status_code"], Int(attributes["status"])) where attributes["status"] != nil and attributes["status"] != ""
+          - set(attributes["result"], "allowed")
+          - set(attributes["result"], "error") where attributes["status_code"] != nil and attributes["status_code"] >= 500
+          - set(attributes["result"], "rate_limited") where attributes["status_code"] == 429
+          - set(attributes["result"], "blocked") where attributes["policy"] == "blocked"
+          - set(attributes["result"], "blocked") where attributes["path"] == "ai" and attributes["status_code"] == 400
+          - set(attributes["rule_raw"], attributes["rule"])
+          - set(attributes["rule"], "none")
+          - set(attributes["rule"], attributes["rule_raw"]) where attributes["rule_raw"] != nil and attributes["rule_raw"] != ""
+          - set(attributes["rule"], "prompt-guard") where attributes["path"] == "ai" and attributes["result"] == "blocked"
+          - set(attributes["user"], attributes["consumer"]) where attributes["consumer"] != nil and attributes["consumer"] != ""
+          - set(attributes["user"], "unknown") where attributes["user"] == nil or attributes["user"] == ""
+          - set(trace_id.string, attributes["trace_id"]) where attributes["trace_id"] != nil and Len(attributes["trace_id"]) == 32
+          # The prompt stays only in the log line (body); don't duplicate it into metadata.
+          - delete_matching_keys(attributes, "^(req_body|ts|consumer|status|rule_raw|prompt)$")
+
+  # Drop the internal mock-LLM hop (duplicates every AI route call) and non-Kiro/AI requests
+  # such as the console's data-plane health probe.
+  filter/internal:
+    error_mode: ignore
+    logs:
+      log_record:
+        - attributes["path"] == "internal"
+        - attributes["path"] == "other"
+
+  resource/audit:
+    attributes:
+      - key: service.name
+        value: kiro-gateway
+        action: upsert
+
+exporters:
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true                  # internal Docker network only
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage:
+    directory: /var/lib/otelcol/file_storage
+    create_directory: true
+
+service:
+  extensions: [health_check, file_storage]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc/tempo]
+    logs:
+      receivers: [file_log/audit]
+      processors: [memory_limiter, transform/audit, filter/internal, resource/audit, batch]
+      exporters: [otlp_http/loki]
+  telemetry:
+    logs:
+      level: warn

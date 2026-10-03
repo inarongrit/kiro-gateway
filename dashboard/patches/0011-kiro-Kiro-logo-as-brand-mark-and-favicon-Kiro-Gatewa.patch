@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Sat, 3 Oct 2026 01:26:54 +0000
+Subject: [PATCH] kiro: Kiro logo as brand mark and favicon, Kiro Gateway page
+ title, drop PoC badge
+
+---
+ index.html                      |  4 ++--
+ src/assets/kiro.svg             |  7 +++++++
+ src/hooks/useDocumentTitle.ts   |  2 +-
+ src/kiro/shell/PortalNavbar.tsx | 22 ++++++----------------
+ src/locales/de/common.json      |  3 +--
+ src/locales/en/common.json      |  3 +--
+ src/locales/es/common.json      |  3 +--
+ src/locales/tr/common.json      |  3 +--
+ src/locales/zh/common.json      |  3 +--
+ 9 files changed, 21 insertions(+), 29 deletions(-)
+ create mode 100644 src/assets/kiro.svg
+
+diff --git a/index.html b/index.html
+index 3557107..eddfa13 100644
+--- a/index.html
++++ b/index.html
+@@ -2,9 +2,9 @@
+ <html lang="en">
+   <head>
+     <meta charset="UTF-8" />
+-    <link rel="icon" type="image/svg+xml" href="/src/assets/apisix-logo.svg" />
++    <link rel="icon" type="image/svg+xml" href="/src/assets/kiro.svg" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>Apache APISIX Dashboard</title>
++    <title>Kiro Gateway</title>
+   </head>
+   <body>
+     <div id="root"></div>
+diff --git a/src/assets/kiro.svg b/src/assets/kiro.svg
+new file mode 100644
+index 0000000..7d5a6f2
+--- /dev/null
++++ b/src/assets/kiro.svg
+@@ -0,0 +1,7 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
++<!-- SVG created with Arrow, by QuiverAI (https://quiver.ai) -->
++  <path d="m200.1 0h-144.2c-30.77 0-55.81 26.13-55.81 55.81v144.1c0 30.84 25.08 56 55.81 56h144.1c30.92 0 56-25.08 56-55.93v-144.2c0-29.68-24.42-55.81-55.87-55.81z" fill="#993FF5"/>
++  <path d="m195.9 107.8c-2.84-27.64-18.85-62.98-60.73-64.4h-3.09c-29.9 0-52.18 21.88-56.84 52.31-2.68 9.26-2.46 20.79-4.86 35.12-2.48 14.9-7.38 20.23-10.77 28.96-1.88 5.11-1.19 17.58 10.84 18.65 6.63 0.59 14.92-2.78 15.03-3.96-2.25 4.59-5.08 12.84-4.78 19.82 0.6 11.64 8.71 17.78 21.25 17.78 14.07 0 24.1-8.4 30.32-12.14 3.01 7.78 6.93 12.14 14.41 12.14 13.02 0 27.47-13.13 33.84-23.58 11.19-19.55 18.26-42.4 16.17-71.32-0.08-2.87-0.35-6.08-0.79-9.38z" fill="#FEFFFE"/>
++  <path d="m135.1 90.55c-7.28-0.54-7.85 8.36-7.85 14.05 0 6.08 1.6 13.14 7.96 13.14 6.6 0 8.92-8.08 8.92-13.14 0-5.56-1.59-14.05-9.03-14.05z" fill="#010202"/>
++  <path d="m164.4 90.55c-7.27-0.54-8.66 7.59-8.66 14.05 0 5.82 1.51 13.14 8.07 13.14 7.38 0 8.83-9.57 8.83-13.14 0-5.89-2.01-14.05-8.24-14.05z" fill="#010202"/>
++</svg>
+diff --git a/src/hooks/useDocumentTitle.ts b/src/hooks/useDocumentTitle.ts
+index 9a4f229..4e62aa3 100644
+--- a/src/hooks/useDocumentTitle.ts
++++ b/src/hooks/useDocumentTitle.ts
+@@ -23,7 +23,7 @@ import { navRoutes } from '@/config/navRoutes';
+ 
+ // matches the static <title> in index.html (the default before any route
+ // resolves and the suffix on every page)
+-const APP_NAME = 'Apache APISIX Dashboard';
++const APP_NAME = 'Kiro Gateway';
+ 
+ type SourceLabel = keyof Resources['en']['common']['sources'];
+ 
+diff --git a/src/kiro/shell/PortalNavbar.tsx b/src/kiro/shell/PortalNavbar.tsx
+index f917c54..aec496b 100644
+--- a/src/kiro/shell/PortalNavbar.tsx
++++ b/src/kiro/shell/PortalNavbar.tsx
+@@ -16,7 +16,6 @@
+  */
+ import {
+   AppShell,
+-  Badge,
+   Box,
+   CloseButton,
+   Group,
+@@ -24,7 +23,6 @@ import {
+   ScrollArea,
+   Stack,
+   Text,
+-  ThemeIcon,
+   Tooltip,
+   UnstyledButton,
+ } from '@mantine/core';
+@@ -32,24 +30,19 @@ import { Link, useRouterState } from '@tanstack/react-router';
+ import type { FC } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
++import kiroLogo from '@/assets/kiro.svg';
+ import type { NavRoute } from '@/config/navRoutes';
+ import { groupLabel, itemLabel, navGroups, type PortalNavItem } from '@/kiro/nav';
+ import IconChevronsLeft from '~icons/tabler/layout-sidebar-left-collapse';
+ import IconChevronsRight from '~icons/tabler/layout-sidebar-left-expand';
+-import IconShield from '~icons/tabler/shield-check';
+ 
+ import classes from './shell.module.css';
+ 
++const DECORATIVE = ''; // empty alt: the logo is decorative
++
++/** Kiro logo (assets/brand/kiro.svg); decorative, the product name is always shown next to it. */
+ export const BrandMark: FC<{ size?: number }> = ({ size = 28 }) => (
+-  <ThemeIcon
+-    size={size}
+-    radius="md"
+-    variant="gradient"
+-    gradient={{ from: 'indigo.4', to: 'violet.5', deg: 135 }}
+-    aria-hidden
+-  >
+-    <IconShield width={size * 0.6} height={size * 0.6} />
+-  </ThemeIcon>
++  <img src={kiroLogo} width={size} height={size} alt={DECORATIVE} aria-hidden style={{ display: 'block', flex: 'none' }} />
+ );
+ 
+ const isActive = (pathname: string, to: string) =>
+@@ -75,10 +68,7 @@ export const PortalNavbar: FC<Props> = ({ collapsed, onToggleCollapsed, onNaviga
+                 {t('kiro.brand.tagline')}
+               </Text>
+             </Box>
+-            <Badge size="xs" ml="auto" variant="light">
+-              {t('kiro.brand.poc')}
+-            </Badge>
+-            <CloseButton hiddenFrom="sm" onClick={onNavigate} aria-label={t('a11y.toggleNavigation')} />
++            <CloseButton ml="auto" hiddenFrom="sm" onClick={onNavigate} aria-label={t('a11y.toggleNavigation')} />
+           </>
+         )}
+       </Group>
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 0b54009..20d8045 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -425,8 +425,7 @@
+   "kiro": {
+     "brand": {
+       "name": "Kiro Gateway",
+-      "tagline": "AI Gateway",
+-      "poc": "PoC"
++      "tagline": "AI Gateway"
+     },
+     "nav": {
+       "overview": "Overview",
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index f6aa5dd..f30f230 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -425,8 +425,7 @@
+   "kiro": {
+     "brand": {
+       "name": "Kiro Gateway",
+-      "tagline": "AI Gateway",
+-      "poc": "PoC"
++      "tagline": "AI Gateway"
+     },
+     "nav": {
+       "overview": "Overview",
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 7929abc..be37b2c 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -425,8 +425,7 @@
+   "kiro": {
+     "brand": {
+       "name": "Kiro Gateway",
+-      "tagline": "AI Gateway",
+-      "poc": "PoC"
++      "tagline": "AI Gateway"
+     },
+     "nav": {
+       "overview": "Overview",
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 215d21f..ae1f85d 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -425,8 +425,7 @@
+   "kiro": {
+     "brand": {
+       "name": "Kiro Gateway",
+-      "tagline": "AI Gateway",
+-      "poc": "PoC"
++      "tagline": "AI Gateway"
+     },
+     "nav": {
+       "overview": "Overview",
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index 79aac11..1b0a8bf 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -425,8 +425,7 @@
+   "kiro": {
+     "brand": {
+       "name": "Kiro Gateway",
+-      "tagline": "AI Gateway",
+-      "poc": "PoC"
++      "tagline": "AI Gateway"
+     },
+     "nav": {
+       "overview": "Overview",

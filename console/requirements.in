@@ -1,0 +1,3 @@
+# Top-level pins; the full transitive lock is generated into requirements.txt after first build.
+fastapi==0.142.2
+uvicorn==0.54.0

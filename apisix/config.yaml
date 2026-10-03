@@ -1,0 +1,195 @@
+# APISIX static config. Routes/SSL/upstreams are NOT here: they live in ../config/ and are
+# applied idempotently by ../scripts/apply.sh (git is the source of truth).
+apisix:
+  node_listen: 9080
+  enable_ipv6: false
+  # Record APISIX's internal phase spans (router match, access/plugins, header/body filter)
+  # as children of the opentelemetry request span, so traces split gateway vs upstream time.
+  tracing: true
+  ssl:
+    enable: true
+    listen:
+      - port: 9443
+      - port: 443     # container-internal: Squid CONNECT targets host:443 -> APISIX
+    # Verify real upstream certs (re-encrypt leg) against the public CA bundle.
+    ssl_trusted_certificate: /etc/ssl/certs/ca-certificates.crt
+
+deployment:
+  role: traditional
+  role_traditional:
+    config_provider: etcd
+  admin:
+    admin_key_required: true
+    admin_key:
+      - name: admin
+        role: admin
+        key: ${{APISIX_ADMIN_KEY}}
+    allow_admin:
+      - 127.0.0.0/8
+      # Host-local clients (scripts/apply.sh via 127.0.0.1) arrive through docker-proxy as the bridge
+      # gateway. Only that one address: Squid and other bridge members must not reach the Admin API.
+      - 172.30.0.1/32
+      - 172.30.0.20/32    # Guardrail Console container (applies policy; proxies the dashboard)
+    admin_listen:
+      ip: 0.0.0.0
+      port: 9180
+    # Admin API + dashboard over TLS (the admin key must not cross the internet in cleartext).
+    https_admin: true
+    admin_api_mtls:
+      admin_ssl_cert: /usr/local/apisix/conf/admin-tls/admin.crt
+      admin_ssl_cert_key: /usr/local/apisix/conf/admin-tls/admin.key
+  etcd:
+    host:
+      - "http://etcd:2379"
+    prefix: /apisix
+    timeout: 30
+
+nginx_config:
+  error_log_level: warn
+  # nginx default proxy_ssl_verify_depth is 1; Amazon chains (leaf -> M0x -> Root CA) need 2+.
+  http_server_location_configuration_snippet: |
+    proxy_ssl_verify_depth 4;
+
+plugin_attr:
+  prometheus:
+    export_uri: /apisix/prometheus/metrics
+    metric_prefix: apisix_
+    enable_export_server: true
+    # Container-internal only (port 9091 is NOT published): Prometheus scrapes apisix:9091.
+    export_addr:
+      ip: 0.0.0.0
+      port: 9091
+    refresh_interval: 15
+  opentelemetry:
+    trace_id_source: random
+    resource:
+      service.name: kiro-gateway
+      deployment.environment: poc
+    collector:
+      address: otel-collector:4318     # OTLP/HTTP, internal Docker network
+      request_timeout: 3
+    batch_span_processor:
+      drop_on_queue_full: true         # never let tracing back-pressure the gateway
+      max_queue_size: 2048
+      batch_timeout: 2
+      inactive_timeout: 1
+      max_export_batch_size: 64
+    set_ngx_var: true                  # declares $opentelemetry_trace_id in nginx.conf
+    # NOTE (APISIX 3.19): the plugin reads collector/resource/batch settings at runtime from
+    # plugin metadata (config/plugin_metadata/opentelemetry.json), not from this block.
+
+# Full plugin list = this build's defaults (copied from apisix/cli/config.lua, APISIX 3.19.0)
+# + opentelemetry, which is off by default. Setting 'plugins' REPLACES the default list,
+# so re-copy the defaults when upgrading APISIX.
+plugins:
+  - real-ip
+  - ai
+  - client-control
+  - proxy-buffering
+  - proxy-control
+  - request-id
+  - zipkin
+  - ext-plugin-pre-req
+  - fault-injection
+  - mocking
+  - serverless-pre-function
+  - cors
+  - ip-restriction
+  - ua-restriction
+  - referer-restriction
+  - csrf
+  - uri-blocker
+  - request-validation
+  - chaitin-waf
+  - multi-auth
+  - openid-connect
+  - saml-auth
+  - cas-auth
+  - authz-casbin
+  - authz-casdoor
+  - wolf-rbac
+  - ldap-auth-advanced
+  - ldap-auth
+  - hmac-auth
+  - basic-auth
+  - jwt-auth
+  - jwe-decrypt
+  - key-auth
+  - dingtalk-auth
+  - feishu-auth
+  - acl
+  - consumer-restriction
+  - attach-consumer-label
+  - forward-auth
+  - opa
+  - authz-keycloak
+  - data-mask
+  - proxy-cache
+  - body-transformer
+  - ai-prompt-template
+  - ai-prompt-decorator
+  - ai-prompt-guard
+  - ai-rag
+  - ai-rate-limiting
+  - ai-proxy-multi
+  - ai-proxy
+  - ai-cache
+  - ai-aws-content-moderation
+  - ai-aliyun-content-moderation
+  - ai-lakera-guard
+  - proxy-mirror
+  - graphql-proxy-cache
+  - proxy-rewrite
+  - workflow
+  - api-breaker
+  - graphql-limit-count
+  - limit-conn
+  - limit-count
+  - limit-req
+  - gzip
+  - server-info
+  - traffic-label
+  - traffic-split
+  - redirect
+  - response-rewrite
+  - openapi-to-mcp
+  - oas-validator
+  - mcp-bridge
+  - degraphql
+  - kafka-proxy
+  - websocket-proxy
+  - grpc-transcode
+  - grpc-web
+  - http-dubbo
+  - public-api
+  - prometheus
+  - datadog
+  - lago
+  - loki-logger
+  - elasticsearch-logger
+  - echo
+  - loggly
+  - http-logger
+  - splunk-hec-logging
+  - skywalking-logger
+  - google-cloud-logging
+  - sls-logger
+  - tcp-logger
+  - kafka-logger
+  - rocketmq-logger
+  - syslog
+  - udp-logger
+  - file-logger
+  - clickhouse-logger
+  - tencent-cloud-cls
+  - inspect
+  - example-plugin
+  - aws-lambda
+  - azure-functions
+  - openwhisk
+  - openfunction
+  - serverless-post-function
+  - ext-plugin-post-req
+  - ext-plugin-post-resp
+  - ai-request-rewrite
+  - opentelemetry

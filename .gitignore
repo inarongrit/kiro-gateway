@@ -1,0 +1,19 @@
+# Secrets and environment-specific state: never commit.
+.env
+.env.*
+!.env.example
+pki/
+data/
+*.pem
+*.key
+logs/
+
+# Build output and caches
+dashboard/work/
+dashboard/dist/
+dashboard/.cache/
+__pycache__/
+*.pyc
+node_modules/
+cdk.out/
+.venv/

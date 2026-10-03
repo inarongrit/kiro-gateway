@@ -1,0 +1,10 @@
+{
+  "name": "runtime.us-east-1.kiro.dev",
+  "desc": "Intercept runtime.us-east-1.kiro.dev: TLS terminated at APISIX, re-encrypted upstream",
+  "hosts": [
+    "runtime.us-east-1.kiro.dev"
+  ],
+  "uri": "/*",
+  "upstream_id": "runtime-us-east-1-kiro-dev",
+  "plugin_config_id": "kiro-inference"
+}

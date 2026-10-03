@@ -1,0 +1,47 @@
+# Loki single-binary, filesystem storage, 15-day retention. Internal Docker network only.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: "2026-01-01"
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 360h
+  allow_structured_metadata: true
+  volume_enabled: true
+  # OTLP ingest: only these low-cardinality attributes become index labels. Everything else
+  # (user, trace_id, op, status, ...) is stored as structured metadata; the prompt stays in the
+  # log line. Never index user or prompt: that would explode the index.
+  otlp_config:
+    log_attributes:
+      - action: index_label
+        attributes: [path, result, rule, kind]
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

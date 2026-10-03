@@ -1,0 +1,3101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 15:05:59 +0000
+Subject: [PATCH] kiro: Observability pages (traffic, latency, usage, traces
+ with span waterfall)
+
+---
+ src/hooks/useUnsavedChangesGuard.tsx          |   6 +-
+ src/kiro/guardrails/format.ts                 |   8 +-
+ .../observability/latency/LatencyPage.tsx     | 270 +++++++++++++++
+ src/kiro/observability/traces/TraceDrawer.tsx | 285 ++++++++++++++++
+ src/kiro/observability/traces/TracesPage.tsx  | 180 ++++++++++
+ src/kiro/observability/traces/data.ts         | 119 +++++++
+ .../observability/traffic/RangeHeader.tsx     |  60 ++++
+ .../observability/traffic/TrafficPage.tsx     | 310 ++++++++++++++++++
+ src/kiro/observability/traffic/data.ts        |  79 +++++
+ src/kiro/observability/usage/RangeHeader.tsx  |  54 +++
+ src/kiro/observability/usage/UsagePage.tsx    | 298 +++++++++++++++++
+ src/kiro/observability/usage/data.ts          |  40 +++
+ src/locales/de/common.json                    | 231 +++++++++++++
+ src/locales/en/common.json                    | 231 +++++++++++++
+ src/locales/es/common.json                    | 231 +++++++++++++
+ src/locales/tr/common.json                    | 231 +++++++++++++
+ src/locales/zh/common.json                    | 231 +++++++++++++
+ src/routes/observability/latency.tsx          |   4 +-
+ src/routes/observability/traces/index.tsx     |   4 +-
+ src/routes/observability/traffic.tsx          |   4 +-
+ src/routes/observability/usage.tsx            |   4 +-
+ 21 files changed, 2870 insertions(+), 10 deletions(-)
+ create mode 100644 src/kiro/observability/latency/LatencyPage.tsx
+ create mode 100644 src/kiro/observability/traces/TraceDrawer.tsx
+ create mode 100644 src/kiro/observability/traces/TracesPage.tsx
+ create mode 100644 src/kiro/observability/traces/data.ts
+ create mode 100644 src/kiro/observability/traffic/RangeHeader.tsx
+ create mode 100644 src/kiro/observability/traffic/TrafficPage.tsx
+ create mode 100644 src/kiro/observability/traffic/data.ts
+ create mode 100644 src/kiro/observability/usage/RangeHeader.tsx
+ create mode 100644 src/kiro/observability/usage/UsagePage.tsx
+ create mode 100644 src/kiro/observability/usage/data.ts
+
+diff --git a/src/hooks/useUnsavedChangesGuard.tsx b/src/hooks/useUnsavedChangesGuard.tsx
+index e7b5daf..99a68c4 100644
+--- a/src/hooks/useUnsavedChangesGuard.tsx
++++ b/src/hooks/useUnsavedChangesGuard.tsx
+@@ -23,7 +23,11 @@ import { useTranslation } from 'react-i18next';
+ 
+ import { isFormDirty } from '@/utils/form-dirty';
+ 
+-type Translate = ReturnType<typeof useTranslation>['t'];
++// Narrow signature: the full typed `t` (700+ keys) exceeds TS's instantiation depth
++// when passed around as a value. Only these four keys are used here.
++type Translate = (
++  key: 'info.unsaved.title' | 'info.unsaved.content' | 'info.unsaved.confirm' | 'form.btn.cancel'
++) => string;
+ 
+ /**
+  * Ask the user whether to throw away unsaved edits.
+diff --git a/src/kiro/guardrails/format.ts b/src/kiro/guardrails/format.ts
+index e88738e..9b563cd 100644
+--- a/src/kiro/guardrails/format.ts
++++ b/src/kiro/guardrails/format.ts
+@@ -40,7 +40,13 @@ export const fmtNumber = (n: number | null | undefined, lang?: string) =>
+   n == null ? '–' : new Intl.NumberFormat(lang).format(n);
+ 
+ export const fmtMs = (n: number | null | undefined) =>
+-  n == null ? '–' : n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms`;
++  n == null
++    ? '–'
++    : n >= 1000
++      ? `${(n / 1000).toFixed(2)} s`
++      : n > 0 && n < 10
++        ? `${Number(n.toPrecision(2))} ms` // sub-10 ms gateway spans: 0.16 ms, 2.3 ms
++        : `${Math.round(n)} ms`;
+ 
+ /** "3 min ago" in the active language. */
+ export const useTimeAgo = () => {
+diff --git a/src/kiro/observability/latency/LatencyPage.tsx b/src/kiro/observability/latency/LatencyPage.tsx
+new file mode 100644
+index 0000000..26eeac5
+--- /dev/null
++++ b/src/kiro/observability/latency/LatencyPage.tsx
+@@ -0,0 +1,270 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** The "Latency" observability page: where the time goes, p50/p95 by route, gateway vs upstream. */
++import { LineChart } from '@mantine/charts';
++import {
++  Badge,
++  Box,
++  Grid,
++  Group,
++  Progress,
++  SegmentedControl,
++  SimpleGrid,
++  Skeleton,
++  Stack,
++  Table,
++  Text,
++} from '@mantine/core';
++import { useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { PortalPageHeader } from '@/kiro/shell/Page';
++
++import { fmtMs, fmtNumber } from '../../guardrails/format';
++import { KpiCard } from '../../guardrails/overview/KpiCard';
++import { EmptyState, ErrorState, SectionCard } from '../../guardrails/ui';
++import { grafana, useLatency } from '../api';
++// RangeHeader is shared from the sibling traffic page per the stage brief.
++import { type RangeHours, routeSeries, seriesHasData, toChartRows } from '../traffic/data';
++import { RangeHeader } from '../traffic/RangeHeader';
++
++const CHART_H = 260;
++
++/** Latency badge colour: >5s red, >1s yellow, otherwise green. */
++const latencyColor = (ms: number | null | undefined): string =>
++  ms == null ? 'gray' : ms > 5000 ? 'red' : ms > 1000 ? 'yellow' : 'teal';
++
++export const LatencyPage = () => {
++  const { t, i18n } = useTranslation();
++  const [hours, setHours] = useState<RangeHours>(1);
++  const [pct, setPct] = useState<'p50' | 'p95'>('p95');
++  const latency = useLatency(hours);
++  const d = latency.data;
++  const lang = i18n.language;
++  const num = (n: number | null | undefined) => fmtNumber(n, lang);
++
++  const byRouteSeries = pct === 'p95' ? d?.p95_by_route : d?.p50_by_route;
++  const byRouteRows = useMemo(() => toChartRows(byRouteSeries, hours, lang), [byRouteSeries, hours, lang]);
++  const routeChartSeries = useMemo(() => routeSeries(byRouteSeries?.series ?? []), [byRouteSeries]);
++
++  const gwVsUpRows = useMemo(() => toChartRows(d?.p95_gateway_vs_upstream, hours, lang), [d, hours, lang]);
++
++  // "Where the time goes" split: gateway p95 vs upstream p95.
++  const gw = d?.gateway_overhead_ms.p95 ?? 0;
++  const up = d?.upstream_p95_ms ?? 0;
++  const total = gw + up;
++  const gwShare = total > 0 ? (gw / total) * 100 : 0;
++  const upShare = total > 0 ? (up / total) * 100 : 0;
++
++  const header = <RangeHeader hours={hours} onChange={setHours} grafanaUrl={grafana.latency} />;
++
++  if (latency.error) {
++    return (
++      <Box maw={1440}>
++        <PortalPageHeader title={t('kiro.latency.title')} subtitle={t('kiro.latency.subtitle')} actions={header} />
++        <SectionCard title={t('kiro.latency.title')}>
++          <ErrorState error={latency.error} />
++        </SectionCard>
++      </Box>
++    );
++  }
++
++  const loading = latency.isPending;
++
++  const pctToggle = (
++    <SegmentedControl
++      size="xs"
++      value={pct}
++      onChange={(v) => setPct(v as 'p50' | 'p95')}
++      aria-label={t('kiro.latency.pctToggle.aria')}
++      data={[
++        { value: 'p50', label: t('kiro.latency.pctToggle.p50') },
++        { value: 'p95', label: t('kiro.latency.pctToggle.p95') },
++      ]}
++    />
++  );
++
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader title={t('kiro.latency.title')} subtitle={t('kiro.latency.subtitle')} actions={header} />
++
++      <Stack gap="md">
++        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
++          <KpiCard
++            label={t('kiro.latency.kpi.chat')}
++            value={d?.kiro_chat_ms ? `${fmtMs(d.kiro_chat_ms.p50)} / ${fmtMs(d.kiro_chat_ms.p95)}` : '–'}
++            note={t('kiro.latency.kpi.chatNote')}
++            color="violet.5"
++            loading={loading}
++          />
++          <KpiCard
++            label={t('kiro.latency.kpi.gateway')}
++            value={
++              d?.gateway_overhead_ms
++                ? `${fmtMs(d.gateway_overhead_ms.p50)} / ${fmtMs(d.gateway_overhead_ms.p95)}`
++                : '–'
++            }
++            note={t('kiro.latency.kpi.gatewayNote')}
++            color="teal.5"
++            loading={loading}
++          />
++          <KpiCard
++            label={t('kiro.latency.kpi.upstream')}
++            value={fmtMs(d?.upstream_p95_ms)}
++            note={t('kiro.latency.kpi.upstreamNote')}
++            color="orange.5"
++            loading={loading}
++          />
++        </SimpleGrid>
++
++        <SectionCard title={t('kiro.latency.split.title')} hint={t('kiro.latency.split.hint')}>
++          {loading ? (
++            <Skeleton height={90} radius="sm" />
++          ) : total <= 0 ? (
++            <EmptyState title={t('kiro.latency.empty.title')} body={t('kiro.latency.empty.body')} />
++          ) : (
++            <Stack gap="sm">
++              <Progress.Root size={28} radius="sm">
++                <Progress.Section value={gwShare} color="teal.5">
++                  <Progress.Label>{t('kiro.latency.split.gateway')}</Progress.Label>
++                </Progress.Section>
++                <Progress.Section value={upShare} color="orange.5">
++                  <Progress.Label>{t('kiro.latency.split.upstream')}</Progress.Label>
++                </Progress.Section>
++              </Progress.Root>
++              <Group justify="space-between">
++                <Group gap={6}>
++                  <Badge color="teal" variant="light" radius="sm">
++                    {t('kiro.latency.split.gateway')}
++                  </Badge>
++                  <Text size="sm" fw={600} style={{ fontVariantNumeric: 'tabular-nums' }}>
++                    {fmtMs(gw)}
++                  </Text>
++                </Group>
++                <Group gap={6}>
++                  <Badge color="orange" variant="light" radius="sm">
++                    {t('kiro.latency.split.upstream')}
++                  </Badge>
++                  <Text size="sm" fw={600} style={{ fontVariantNumeric: 'tabular-nums' }}>
++                    {fmtMs(up)}
++                  </Text>
++                </Group>
++              </Group>
++              <Text size="xs" c="dimmed">
++                {t('kiro.latency.split.explain', { gw: fmtMs(gw), up: fmtMs(up) })}
++              </Text>
++            </Stack>
++          )}
++        </SectionCard>
++
++        <Grid gutter="md">
++          <Grid.Col span={{ base: 12, lg: 7 }}>
++            <SectionCard
++              title={t('kiro.latency.byRoute.title')}
++              hint={t('kiro.latency.byRoute.hint')}
++              action={pctToggle}
++            >
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !seriesHasData(byRouteSeries) ? (
++                <EmptyState title={t('kiro.latency.empty.title')} body={t('kiro.latency.empty.body')} />
++              ) : (
++                <LineChart
++                  h={CHART_H}
++                  data={byRouteRows}
++                  dataKey="label"
++                  withLegend
++                  curveType="monotone"
++                  valueFormatter={(v) => fmtMs(v)}
++                  series={routeChartSeries}
++                />
++              )}
++            </SectionCard>
++          </Grid.Col>
++
++          <Grid.Col span={{ base: 12, lg: 5 }}>
++            <SectionCard title={t('kiro.latency.gwVsUp.title')} hint={t('kiro.latency.gwVsUp.hint')} h="100%">
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !seriesHasData(d?.p95_gateway_vs_upstream) ? (
++                <EmptyState title={t('kiro.latency.empty.title')} body={t('kiro.latency.empty.body')} />
++              ) : (
++                <LineChart
++                  h={CHART_H}
++                  data={gwVsUpRows}
++                  dataKey="label"
++                  withLegend
++                  curveType="monotone"
++                  valueFormatter={(v) => fmtMs(v)}
++                  series={[
++                    { name: 'Gateway', label: t('kiro.latency.split.gateway'), color: 'teal.5' },
++                    { name: 'Upstream (Kiro / AWS)', label: t('kiro.latency.split.upstream'), color: 'orange.5' },
++                  ]}
++                />
++              )}
++            </SectionCard>
++          </Grid.Col>
++
++          <Grid.Col span={12}>
++            <SectionCard title={t('kiro.latency.routes.title')} hint={t('kiro.latency.routes.hint')}>
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !d || d.routes.length === 0 ? (
++                <EmptyState title={t('kiro.latency.empty.title')} />
++              ) : (
++                <Table verticalSpacing="xs" fz="sm">
++                  <Table.Thead>
++                    <Table.Tr>
++                      <Table.Th>{t('kiro.latency.routes.name')}</Table.Th>
++                      <Table.Th>{t('kiro.latency.routes.id')}</Table.Th>
++                      <Table.Th ta="right">{t('kiro.latency.routes.p50')}</Table.Th>
++                      <Table.Th ta="right">{t('kiro.latency.routes.p95')}</Table.Th>
++                      <Table.Th ta="right">{t('kiro.latency.routes.requests')}</Table.Th>
++                    </Table.Tr>
++                  </Table.Thead>
++                  <Table.Tbody>
++                    {d.routes.map((r) => (
++                      <Table.Tr key={r.id}>
++                        <Table.Td fw={500}>{r.route}</Table.Td>
++                        <Table.Td>
++                          <Text span ff="monospace" size="xs" c="dimmed">
++                            {r.id}
++                          </Text>
++                        </Table.Td>
++                        <Table.Td ta="right" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                          {fmtMs(r.p50)}
++                        </Table.Td>
++                        <Table.Td ta="right">
++                          <Badge color={latencyColor(r.p95)} variant="light" radius="sm">
++                            {fmtMs(r.p95)}
++                          </Badge>
++                        </Table.Td>
++                        <Table.Td ta="right" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                          {num(r.requests)}
++                        </Table.Td>
++                      </Table.Tr>
++                    ))}
++                  </Table.Tbody>
++                </Table>
++              )}
++            </SectionCard>
++          </Grid.Col>
++        </Grid>
++      </Stack>
++    </Box>
++  );
++};
+diff --git a/src/kiro/observability/traces/TraceDrawer.tsx b/src/kiro/observability/traces/TraceDrawer.tsx
+new file mode 100644
+index 0000000..f9316f3
+--- /dev/null
++++ b/src/kiro/observability/traces/TraceDrawer.tsx
+@@ -0,0 +1,285 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Right-side Drawer with the full detail + waterfall for one trace. */
++import {
++  ActionIcon,
++  Badge,
++  Box,
++  Collapse,
++  CopyButton,
++  Drawer,
++  Group,
++  Skeleton,
++  Stack,
++  Table,
++  Text,
++  Tooltip,
++  UnstyledButton,
++} from '@mantine/core';
++import { useDisclosure } from '@mantine/hooks';
++import { useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { grafana, type Span, useTrace } from '@/kiro/observability/api';
++import IconCheck from '~icons/tabler/check';
++import IconChevron from '~icons/tabler/chevron-right';
++import IconCopy from '~icons/tabler/copy';
++import IconExternal from '~icons/tabler/external-link';
++
++import { fmtMs } from '../../guardrails/format';
++import { EmptyState, ErrorState } from '../../guardrails/ui';
++import { buildWaterfall, phaseColor, shortSpanName, statusColor, useHostLabel, workSplit } from './data';
++
++const CopyChip = ({ value, label }: { value: string; label: string }) => (
++  <CopyButton value={value} timeout={1500}>
++    {({ copied, copy }) => (
++      <Tooltip label={label} withArrow>
++        <ActionIcon variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label={label} size="sm">
++          {copied ? <IconCheck width={14} height={14} /> : <IconCopy width={14} height={14} />}
++        </ActionIcon>
++      </Tooltip>
++    )}
++  </CopyButton>
++);
++
++/** Flat key/value table used for span and request attributes. */
++const AttrTable = ({ attrs }: { attrs: Record<string, string | number | boolean | null> }) => {
++  const entries = Object.entries(attrs);
++  if (entries.length === 0) return null;
++  return (
++    <Table withTableBorder verticalSpacing={4} fz="xs">
++      <Table.Tbody>
++        {entries.map(([k, v]) => (
++          <Table.Tr key={k}>
++            <Table.Td w="40%">
++              <Text span ff="monospace" size="xs" c="dimmed">
++                {k}
++              </Text>
++            </Table.Td>
++            <Table.Td>
++              <Text span ff="monospace" size="xs" style={{ wordBreak: 'break-all' }}>
++                {String(v)}
++              </Text>
++            </Table.Td>
++          </Table.Tr>
++        ))}
++      </Table.Tbody>
++    </Table>
++  );
++};
++
++const SpanRow = ({ span, depth, total }: { span: Span; depth: number; total: number }) => {
++  const [open, setOpen] = useState(false);
++  const left = total > 0 ? (span.offset_ms / total) * 100 : 0;
++  const width = total > 0 ? Math.max((span.duration_ms / total) * 100, 0.2) : 0;
++  const hasAttrs = Object.keys(span.attributes).length > 0;
++  const short = shortSpanName(span.name);
++  return (
++    <Box>
++      <UnstyledButton
++        onClick={() => hasAttrs && setOpen((o) => !o)}
++        style={{ display: 'block', width: '100%', cursor: hasAttrs ? 'pointer' : 'default' }}
++      >
++        <Group gap={6} wrap="nowrap" py={3} style={{ paddingLeft: depth * 14 }}>
++          <IconChevron
++            width={12}
++            height={12}
++            style={{
++              opacity: hasAttrs ? 0.6 : 0,
++              transform: open ? 'rotate(90deg)' : 'none',
++              transition: 'transform 120ms',
++              flexShrink: 0,
++            }}
++          />
++          <Tooltip label={span.name} withArrow openDelay={300} disabled={short === span.name}>
++            <Text span ff="monospace" size="xs" style={{ flex: '0 0 42%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
++              {short}
++            </Text>
++          </Tooltip>
++          <Box style={{ position: 'relative', flex: 1, height: 14 }}>
++            <Box
++              style={{
++                position: 'absolute',
++                left: `${left}%`,
++                width: `${width}%`,
++                minWidth: 2,
++                top: 3,
++                height: 8,
++                borderRadius: 4,
++              }}
++              bg={phaseColor(span.name)}
++            />
++          </Box>
++          <Text span size="xs" c="dimmed" ff="monospace" style={{ flexShrink: 0, width: 64, textAlign: 'right' }}>
++            {fmtMs(span.duration_ms)}
++          </Text>
++        </Group>
++      </UnstyledButton>
++      {hasAttrs && (
++        <Collapse in={open}>
++          <Box pl={depth * 14 + 18} pb={6}>
++            <AttrTable attrs={span.attributes} />
++          </Box>
++        </Collapse>
++      )}
++    </Box>
++  );
++};
++
++export const TraceDrawer = ({ traceId, onClose }: { traceId: string | null; onClose: () => void }) => {
++  const { t } = useTranslation();
++  const [attrsOpen, { toggle: toggleAttrs }] = useDisclosure(false);
++  const hostLabel = useHostLabel();
++  const q = useTrace(traceId);
++  const d = q.data;
++  const is404 =
++    q.error instanceof Error && /\b404\b/.test(q.error.message);
++
++  const total = d?.duration_ms ?? 0;
++  const rootStatus = d ? Number(d.attributes['http.status_code'] ?? d.attributes['http.response.status_code'] ?? NaN) : NaN;
++  const host = d ? String(d.attributes['net.host.name'] ?? '') : '';
++  const hostFriendly = host ? hostLabel(host) : null;
++  const split = d ? workSplit(d.spans, total) : null;
++  const waterfall = d ? buildWaterfall(d.spans) : [];
++
++  return (
++    <Drawer
++      opened={traceId != null}
++      onClose={onClose}
++      position="right"
++      size="xl"
++      title={<Text fw={600}>{t('kiro.traces.detail.title')}</Text>}
++    >
++      {q.isPending ? (
++        <Stack gap="md">
++          <Skeleton height={60} radius="sm" />
++          <Skeleton height={320} radius="sm" />
++        </Stack>
++      ) : is404 ? (
++        <EmptyState title={t('kiro.traces.detail.goneTitle')} body={t('kiro.traces.detail.goneBody')} />
++      ) : q.error ? (
++        <ErrorState error={q.error} />
++      ) : d ? (
++        <Stack gap="lg">
++          <Stack gap="xs">
++            <Group gap="sm" wrap="wrap">
++              <Text ff="monospace" fw={600}>
++                {d.root}
++              </Text>
++              {Number.isFinite(rootStatus) && (
++                <Badge color={statusColor(rootStatus)} variant="light" radius="sm">
++                  {rootStatus}
++                </Badge>
++              )}
++            </Group>
++            <Group gap="md" wrap="wrap">
++              <Text size="sm">
++                <Text span c="dimmed" size="sm">
++                  {t('kiro.traces.detail.total')}:{' '}
++                </Text>
++                <Text span fw={600}>
++                  {fmtMs(total)}
++                </Text>
++              </Text>
++              {host && (
++                <Text size="sm">
++                  <Text span c="dimmed" size="sm">
++                    {t('kiro.traces.detail.host')}:{' '}
++                  </Text>
++                  {hostFriendly ? hostFriendly.label : host}{' '}
++                  {hostFriendly && (
++                    <Text span c="dimmed" size="xs" ff="monospace">
++                      {hostFriendly.raw}
++                    </Text>
++                  )}
++                </Text>
++              )}
++            </Group>
++            <Group gap={6} wrap="nowrap">
++              <Text span c="dimmed" size="xs">
++                {t('kiro.traces.detail.traceId')}:
++              </Text>
++              <Text span ff="monospace" size="xs" style={{ wordBreak: 'break-all' }}>
++                {d.trace_id}
++              </Text>
++              <CopyChip value={d.trace_id} label={t('kiro.traces.detail.copyId')} />
++            </Group>
++            <Group gap="xs">
++              <Text
++                component="a"
++                href={grafana.trace(d.trace_id)}
++                target="_blank"
++                rel="noopener"
++                size="sm"
++                c="blue"
++              >
++                <Group gap={4} wrap="nowrap" component="span">
++                  {t('kiro.traces.detail.openGrafana')}
++                  <IconExternal width={13} height={13} />
++                </Group>
++              </Text>
++            </Group>
++          </Stack>
++
++          {split && (
++            <Text size="sm" c="dimmed">
++              {split.upstream == null
++                ? t('kiro.traces.detail.workGatewayOnly', { gateway: fmtMs(split.gateway) })
++                : t('kiro.traces.detail.work', {
++                    gateway: fmtMs(split.gateway),
++                    upstream: fmtMs(split.upstream),
++                  })}
++            </Text>
++          )}
++
++          <Box>
++            <Text fw={600} size="sm" mb="xs">
++              {t('kiro.traces.detail.waterfall')}
++            </Text>
++            <Stack gap={0}>
++              {waterfall.map(({ span, depth }) => (
++                <SpanRow key={span.id} span={span} depth={depth} total={total} />
++              ))}
++            </Stack>
++          </Box>
++
++          {Object.keys(d.attributes).length > 0 && (
++            <Box>
++              <UnstyledButton onClick={toggleAttrs} aria-label={t('kiro.traces.detail.requestAttrs')}>
++                <Group gap={6} wrap="nowrap">
++                  <IconChevron
++                    width={13}
++                    height={13}
++                    style={{ transform: attrsOpen ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' }}
++                  />
++                  <Text fw={600} size="sm">
++                    {t('kiro.traces.detail.requestAttrs')}
++                  </Text>
++                </Group>
++              </UnstyledButton>
++              <Collapse in={attrsOpen}>
++                <Box mt="xs">
++                  <AttrTable attrs={d.attributes} />
++                </Box>
++              </Collapse>
++            </Box>
++          )}
++        </Stack>
++      ) : null}
++    </Drawer>
++  );
++};
+diff --git a/src/kiro/observability/traces/TracesPage.tsx b/src/kiro/observability/traces/TracesPage.tsx
+new file mode 100644
+index 0000000..78e6508
+--- /dev/null
++++ b/src/kiro/observability/traces/TracesPage.tsx
+@@ -0,0 +1,180 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** The "Traces" page: a filterable list of recent requests, each opening a waterfall detail. */
++import { Badge, Box, Group, SegmentedControl, Skeleton, Stack, Table, Text, Tooltip } from '@mantine/core';
++import { useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { grafana, type TraceKind, useTraces } from '@/kiro/observability/api';
++import { PortalPageHeader } from '@/kiro/shell/Page';
++
++import { fmtMs, fmtTime } from '../../guardrails/format';
++import { EmptyState, ErrorState, SectionCard } from '../../guardrails/ui';
++import { RangeHeader } from '../usage/RangeHeader';
++import { statusColor, type TraceHours, useHostLabel } from './data';
++import { TraceDrawer } from './TraceDrawer';
++
++/** "12s ago" style relative label for an epoch-ms timestamp. */
++const useRelative = () => {
++  const { i18n } = useTranslation();
++  return (ms: number) => {
++    const rtf = new Intl.RelativeTimeFormat(i18n.language, { numeric: 'auto' });
++    const s = Math.round((ms - Date.now()) / 1000);
++    const a = Math.abs(s);
++    if (a < 60) return rtf.format(s, 'second');
++    if (a < 3600) return rtf.format(Math.round(s / 60), 'minute');
++    if (a < 86400) return rtf.format(Math.round(s / 3600), 'hour');
++    return rtf.format(Math.round(s / 86400), 'day');
++  };
++};
++
++export const TracesPage = () => {
++  const { t, i18n } = useTranslation();
++  const [hours, setHours] = useState<TraceHours>(1);
++  const [kind, setKind] = useState<TraceKind>('chat');
++  const [selected, setSelected] = useState<string | null>(null);
++  const relative = useRelative();
++  const hostLabel = useHostLabel();
++
++  const traces = useTraces(hours, kind);
++  const rows = useMemo(() => traces.data?.traces ?? [], [traces.data]);
++  const slowest = useMemo(() => Math.max(1, ...rows.map((r) => r.duration_ms)), [rows]);
++
++  const header = (
++    <RangeHeader
++      value={String(hours)}
++      onChange={(v) => setHours(Number(v) as TraceHours)}
++      options={[
++        { value: '0.25', label: t('kiro.traces.range.m15') },
++        { value: '1', label: t('kiro.traces.range.h1') },
++        { value: '6', label: t('kiro.traces.range.h6') },
++        { value: '24', label: t('kiro.traces.range.h24') },
++      ]}
++      rangeAria={t('kiro.traces.range.aria')}
++      grafanaUrl={grafana.traces}
++      grafanaHours={hours}
++      grafanaLabel={t('kiro.traces.grafana')}
++    />
++  );
++
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader title={t('kiro.traces.title')} subtitle={t('kiro.traces.subtitle')} actions={header} />
++
++      <SectionCard
++        title={t('kiro.traces.list.title')}
++        hint={t('kiro.traces.list.hint')}
++        action={
++          <SegmentedControl
++            size="sm"
++            value={kind}
++            onChange={(v) => setKind(v as TraceKind)}
++            aria-label={t('kiro.traces.filter.aria')}
++            data={[
++              { value: 'chat', label: t('kiro.traces.filter.chat') },
++              { value: 'all', label: t('kiro.traces.filter.all') },
++              { value: 'slow', label: t('kiro.traces.filter.slow') },
++              { value: 'errors', label: t('kiro.traces.filter.errors') },
++            ]}
++          />
++        }
++      >
++        {traces.isPending ? (
++          <Skeleton height={320} radius="sm" />
++        ) : traces.error ? (
++          <ErrorState error={traces.error} />
++        ) : rows.length === 0 ? (
++          <EmptyState title={t('kiro.traces.list.empty')} body={t('kiro.traces.list.emptyBody')} />
++        ) : (
++          <Table.ScrollContainer minWidth={720}>
++            <Table highlightOnHover verticalSpacing="xs">
++              <Table.Thead>
++                <Table.Tr>
++                  <Table.Th w={110}>{t('kiro.traces.col.time')}</Table.Th>
++                  <Table.Th>{t('kiro.traces.col.request')}</Table.Th>
++                  <Table.Th>{t('kiro.traces.col.host')}</Table.Th>
++                  <Table.Th w={80}>{t('kiro.traces.col.status')}</Table.Th>
++                  <Table.Th w={200}>{t('kiro.traces.col.duration')}</Table.Th>
++                </Table.Tr>
++              </Table.Thead>
++              <Table.Tbody>
++                {rows.map((r) => {
++                  const host = hostLabel(r.host);
++                  const barPct = Math.max((r.duration_ms / slowest) * 100, 1);
++                  return (
++                    <Table.Tr
++                      key={r.trace_id}
++                      style={{ cursor: 'pointer' }}
++                      onClick={() => setSelected(r.trace_id)}
++                    >
++                      <Table.Td>
++                        <Tooltip label={fmtTime(new Date(r.start_ms).toISOString(), i18n.language)} withArrow openDelay={300}>
++                          <Text size="sm" c="dimmed">
++                            {relative(r.start_ms)}
++                          </Text>
++                        </Tooltip>
++                      </Table.Td>
++                      <Table.Td>
++                        <Text span ff="monospace" size="sm">
++                          {r.name.startsWith(r.method) ? r.name : `${r.method} ${r.name}`.trim()}
++                        </Text>
++                      </Table.Td>
++                      <Table.Td>
++                        {host ? (
++                          <Stack gap={0}>
++                            <Text size="sm">{host.label}</Text>
++                            <Text size="xs" c="dimmed" ff="monospace">
++                              {host.raw}
++                            </Text>
++                          </Stack>
++                        ) : (
++                          <Text size="sm" c="dimmed" ff="monospace">
++                            {r.host}
++                          </Text>
++                        )}
++                      </Table.Td>
++                      <Table.Td>
++                        <Badge color={statusColor(r.status)} variant="light" radius="sm">
++                          {r.status ?? '–'}
++                        </Badge>
++                      </Table.Td>
++                      <Table.Td>
++                        <Group gap="xs" wrap="nowrap">
++                          <Text size="sm" ff="monospace" style={{ width: 72, textAlign: 'right' }}>
++                            {fmtMs(r.duration_ms)}
++                          </Text>
++                          <Box style={{ flex: 1, height: 4, borderRadius: 2 }} bg="var(--mantine-color-default-border)">
++                            <Box
++                              style={{ width: `${barPct}%`, height: 4, borderRadius: 2 }}
++                              bg={r.duration_ms > 1000 ? 'orange.5' : 'blue.5'}
++                            />
++                          </Box>
++                        </Group>
++                      </Table.Td>
++                    </Table.Tr>
++                  );
++                })}
++              </Table.Tbody>
++            </Table>
++          </Table.ScrollContainer>
++        )}
++      </SectionCard>
++
++      <TraceDrawer traceId={selected} onClose={() => setSelected(null)} />
++    </Box>
++  );
++};
+diff --git a/src/kiro/observability/traces/data.ts b/src/kiro/observability/traces/data.ts
+new file mode 100644
+index 0000000..5fcf39a
+--- /dev/null
++++ b/src/kiro/observability/traces/data.ts
+@@ -0,0 +1,119 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Pure data helpers for the Traces page: ranges, host/status/phase mapping, waterfall tree. */
++import { useTranslation } from 'react-i18next';
++
++import type { Span } from '@/kiro/observability/api';
++
++/** Selectable trace windows, in hours (15m / 1h / 6h / 24h). */
++export type TraceHours = 0.25 | 1 | 6 | 24;
++
++/** A friendly label for a known gateway host, plus the raw host to show dimmed. null = unknown. */
++export type HostLabel = { label: string; raw: string } | null;
++
++/**
++ * Resolve a host string to a friendly label (static i18n keys so the key type checks).
++ * Returns null for hosts we have no label for — callers then show the raw host only.
++ */
++export const useHostLabel = () => {
++  const { t } = useTranslation();
++  return (host: string): HostLabel => {
++    switch (host) {
++      case 'runtime.us-east-1.kiro.dev':
++        return { label: t('kiro.traces.host.kiroChat'), raw: host };
++      case 'q.us-east-1.amazonaws.com':
++        return { label: t('kiro.traces.host.kiroApi'), raw: host };
++      case 'management.us-east-1.kiro.dev':
++        return { label: t('kiro.traces.host.kiroAccount'), raw: host };
++      case '127.0.0.1':
++        return { label: t('kiro.traces.host.aiRoute'), raw: host };
++      default:
++        return null;
++    }
++  };
++};
++
++/** Map an HTTP status (or null) to a theme colour, consistent with the rest of the console. */
++export const statusColor = (status: number | null): string => {
++  if (status == null) return 'gray';
++  if (status === 403) return 'red';
++  if (status === 429) return 'orange';
++  if (status === 499) return 'gray';
++  if (status >= 500) return 'red.8';
++  if (status >= 400) return 'yellow';
++  if (status >= 300) return 'blue';
++  if (status >= 200) return 'teal';
++  return 'gray';
++};
++
++/** Colour a span bar by the APISIX phase embedded in its name. */
++export const phaseColor = (name: string): string => {
++  const n = name.toLowerCase();
++  if (n.includes('access') || n.includes('rewrite')) return 'violet.5';
++  if (n.includes('upstream') || n.includes('balancer') || n.includes('proxy')) return 'blue.5';
++  if (n.includes('header_filter') || n.includes('body_filter') || n.includes('log')) return 'gray.5';
++  return 'teal.5';
++};
++
++/** Drop the noisy "apisix.phase." prefix for display (full name stays in the tooltip). */
++export const shortSpanName = (name: string): string => name.replace(/^apisix\.phase\./, '');
++
++/** A span annotated with its tree depth, in render (offset) order. */
++export type WaterfallRow = { span: Span; depth: number };
++
++/**
++ * Build a depth-annotated, offset-ordered list of spans from the flat id/parent list.
++ * Children are visited in ascending offset so the waterfall reads top-to-bottom in time.
++ */
++export const buildWaterfall = (spans: Span[]): WaterfallRow[] => {
++  const byParent = new Map<string, Span[]>();
++  const ids = new Set(spans.map((s) => s.id));
++  for (const s of spans) {
++    const parent = s.parent && ids.has(s.parent) ? s.parent : '';
++    const list = byParent.get(parent) ?? [];
++    list.push(s);
++    byParent.set(parent, list);
++  }
++  for (const list of byParent.values()) list.sort((a, b) => a.offset_ms - b.offset_ms);
++
++  const out: WaterfallRow[] = [];
++  const walk = (parent: string, depth: number) => {
++    for (const s of byParent.get(parent) ?? []) {
++      out.push({ span: s, depth });
++      walk(s.id, depth + 1);
++    }
++  };
++  walk('', 0);
++  // Any spans whose parent was pruned still deserve a row (defensive).
++  if (out.length < spans.length) {
++    const seen = new Set(out.map((r) => r.span.id));
++    for (const s of spans) if (!seen.has(s.id)) out.push({ span: s, depth: 0 });
++  }
++  return out;
++};
++
++/** Best-effort gateway-vs-upstream-wait split from span names. Returns null wait if none match. */
++export const workSplit = (spans: Span[], total: number): { gateway: number; upstream: number | null } => {
++  const isUpstream = (name: string) => {
++    const n = name.toLowerCase();
++    return n.includes('upstream') || n.includes('proxy') || n.includes('balancer');
++  };
++  const upstreamSpans = spans.filter((s) => isUpstream(s.name));
++  if (upstreamSpans.length === 0) return { gateway: total, upstream: null };
++  const upstream = Math.max(...upstreamSpans.map((s) => s.duration_ms));
++  return { gateway: Math.max(0, total - upstream), upstream };
++};
+diff --git a/src/kiro/observability/traffic/RangeHeader.tsx b/src/kiro/observability/traffic/RangeHeader.tsx
+new file mode 100644
+index 0000000..b54dbeb
+--- /dev/null
++++ b/src/kiro/observability/traffic/RangeHeader.tsx
+@@ -0,0 +1,60 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Shared page-header actions for Traffic & Latency: time-range picker + Grafana escape hatch. */
++import { Button, SegmentedControl } from '@mantine/core';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import IconExternal from '~icons/tabler/external-link';
++
++import { grafana } from '../api';
++import type { RangeHours } from './data';
++
++export const RangeHeader: FC<{
++  hours: RangeHours;
++  onChange: (h: RangeHours) => void;
++  grafanaUrl: string;
++}> = ({ hours, onChange, grafanaUrl }) => {
++  const { t } = useTranslation();
++  return (
++    <>
++      <SegmentedControl
++        size="sm"
++        value={String(hours)}
++        onChange={(v) => onChange(Number(v) as RangeHours)}
++        aria-label={t('kiro.traffic.range.aria')}
++        data={[
++          { value: '1', label: t('kiro.traffic.range.h1') },
++          { value: '6', label: t('kiro.traffic.range.h6') },
++          { value: '24', label: t('kiro.traffic.range.h24') },
++          { value: '168', label: t('kiro.traffic.range.d7') },
++        ]}
++      />
++      <Button
++        component="a"
++        href={grafana.withRange(grafanaUrl, hours)}
++        target="_blank"
++        rel="noopener"
++        size="sm"
++        variant="subtle"
++        rightSection={<IconExternal width={15} height={15} />}
++      >
++        {t('kiro.traffic.range.grafana')}
++      </Button>
++    </>
++  );
++};
+diff --git a/src/kiro/observability/traffic/TrafficPage.tsx b/src/kiro/observability/traffic/TrafficPage.tsx
+new file mode 100644
+index 0000000..f5efc78
+--- /dev/null
++++ b/src/kiro/observability/traffic/TrafficPage.tsx
+@@ -0,0 +1,310 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** The "Traffic" observability page: requests, status codes, routes and bandwidth. */
++import { AreaChart, DonutChart, LineChart } from '@mantine/charts';
++import { Badge, Box, Grid, Group, SimpleGrid, Skeleton, Stack, Table, Text } from '@mantine/core';
++import { useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { PortalPageHeader } from '@/kiro/shell/Page';
++
++import { fmtNumber } from '../../guardrails/format';
++import { KpiCard } from '../../guardrails/overview/KpiCard';
++import { EmptyState, ErrorState, SectionCard } from '../../guardrails/ui';
++import { grafana, useTraffic } from '../api';
++import {
++  fmtBytesPerSec,
++  type RangeHours,
++  routeSeries,
++  seriesHasData,
++  sparkFrom,
++  statusColor,
++  toChartRows,
++} from './data';
++import { RangeHeader } from './RangeHeader';
++
++const CHART_H = 260;
++
++export const TrafficPage = () => {
++  const { t, i18n } = useTranslation();
++  const [hours, setHours] = useState<RangeHours>(1);
++  const traffic = useTraffic(hours);
++  const d = traffic.data;
++  const lang = i18n.language;
++  const num = (n: number | null | undefined) => fmtNumber(n, lang);
++
++  const byRouteRows = useMemo(() => toChartRows(d?.per_minute_by_route, hours, lang), [d, hours, lang]);
++  const byCodeRows = useMemo(() => toChartRows(d?.per_minute_by_code, hours, lang), [d, hours, lang]);
++  const bandwidthRows = useMemo(() => toChartRows(d?.bandwidth_bytes_per_s, hours, lang), [d, hours, lang]);
++
++  const routeChartSeries = useMemo(
++    () => routeSeries(d?.per_minute_by_route.series ?? []),
++    [d]
++  );
++  const codeChartSeries = useMemo(
++    () =>
++      (d?.per_minute_by_code.series ?? []).map((code) => ({
++        name: code,
++        label: code,
++        color: statusColor(code),
++      })),
++    [d]
++  );
++
++  const totalRequests = d?.routes.reduce((a, r) => a + r.requests, 0) ?? 0;
++  const donutData = useMemo(
++    () =>
++      (d?.codes ?? []).map((c) => ({
++        name: c.code,
++        value: c.requests,
++        color: statusColor(c.code),
++      })),
++    [d]
++  );
++
++  const codeMeaning = (code: string): string => {
++    switch (code) {
++      case '200':
++        return t('kiro.traffic.codeMeaning.ok');
++      case '400':
++        return t('kiro.traffic.codeMeaning.badRequest');
++      case '401':
++        return t('kiro.traffic.codeMeaning.unauth');
++      case '403':
++        return t('kiro.traffic.codeMeaning.blocked');
++      case '404':
++        return t('kiro.traffic.codeMeaning.notFound');
++      case '429':
++        return t('kiro.traffic.codeMeaning.limited');
++      case '499':
++        return t('kiro.traffic.codeMeaning.clientClosed');
++      default:
++        return code.startsWith('5') ? t('kiro.traffic.codeMeaning.serverError') : code;
++    }
++  };
++
++  const header = (
++    <RangeHeader hours={hours} onChange={setHours} grafanaUrl={grafana.traffic} />
++  );
++
++  if (traffic.error) {
++    return (
++      <Box maw={1440}>
++        <PortalPageHeader title={t('kiro.traffic.title')} subtitle={t('kiro.traffic.subtitle')} actions={header} />
++        <SectionCard title={t('kiro.traffic.title')}>
++          <ErrorState error={traffic.error} />
++        </SectionCard>
++      </Box>
++    );
++  }
++
++  const loading = traffic.isPending;
++
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader title={t('kiro.traffic.title')} subtitle={t('kiro.traffic.subtitle')} actions={header} />
++
++      <Stack gap="md">
++        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
++          <KpiCard
++            label={t('kiro.traffic.kpi.requests')}
++            value={num(d?.totals.total)}
++            note={t('kiro.traffic.kpi.requestsNote')}
++            spark={sparkFrom(d?.per_minute_by_code, '200')}
++            color="teal.5"
++            loading={loading}
++          />
++          <KpiCard
++            label={t('kiro.traffic.kpi.blocked')}
++            value={num(d?.totals.blocked_403)}
++            note={t('kiro.traffic.kpi.blockedNote')}
++            spark={sparkFrom(d?.per_minute_by_code, '403')}
++            color="red.5"
++            loading={loading}
++          />
++          <KpiCard
++            label={t('kiro.traffic.kpi.limited')}
++            value={num(d?.totals.limited_429)}
++            note={t('kiro.traffic.kpi.limitedNote')}
++            color="orange.5"
++            loading={loading}
++          />
++          <KpiCard
++            label={t('kiro.traffic.kpi.errors')}
++            value={num(d?.totals.errors_5xx)}
++            note={t('kiro.traffic.kpi.errorsNote')}
++            color="red.8"
++            loading={loading}
++          />
++        </SimpleGrid>
++
++        <Grid gutter="md">
++          <Grid.Col span={{ base: 12, lg: 7 }}>
++            <SectionCard title={t('kiro.traffic.byRoute.title')} hint={t('kiro.traffic.byRoute.hint')}>
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !seriesHasData(d?.per_minute_by_route) ? (
++                <EmptyState title={t('kiro.traffic.empty.title')} body={t('kiro.traffic.empty.body')} />
++              ) : (
++                <AreaChart
++                  h={CHART_H}
++                  data={byRouteRows}
++                  dataKey="label"
++                  type="stacked"
++                  withLegend
++                  curveType="monotone"
++                  valueFormatter={(v) => `${num(v)} ${t('kiro.traffic.unit.rpm')}`}
++                  series={routeChartSeries}
++                />
++              )}
++            </SectionCard>
++          </Grid.Col>
++
++          <Grid.Col span={{ base: 12, lg: 5 }}>
++            <SectionCard title={t('kiro.traffic.byCode.title')} hint={t('kiro.traffic.byCode.hint')}>
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !seriesHasData(d?.per_minute_by_code) ? (
++                <EmptyState title={t('kiro.traffic.empty.title')} body={t('kiro.traffic.empty.body')} />
++              ) : (
++                <AreaChart
++                  h={CHART_H}
++                  data={byCodeRows}
++                  dataKey="label"
++                  type="stacked"
++                  withLegend
++                  curveType="monotone"
++                  valueFormatter={(v) => `${num(v)} ${t('kiro.traffic.unit.rpm')}`}
++                  series={codeChartSeries}
++                />
++              )}
++            </SectionCard>
++          </Grid.Col>
++
++          <Grid.Col span={{ base: 12, lg: 5 }}>
++            <SectionCard title={t('kiro.traffic.codes.title')} hint={t('kiro.traffic.codes.hint')} h="100%">
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !d || d.codes.length === 0 ? (
++                <EmptyState title={t('kiro.traffic.empty.title')} />
++              ) : (
++                <Stack gap="md">
++                  <Group justify="center">
++                    <DonutChart
++                      data={donutData}
++                      size={160}
++                      thickness={26}
++                      withTooltip
++                      tooltipDataSource="segment"
++                      valueFormatter={(v) => num(v)}
++                    />
++                  </Group>
++                  <Table verticalSpacing="xs" fz="sm">
++                    <Table.Thead>
++                      <Table.Tr>
++                        <Table.Th>{t('kiro.traffic.codes.code')}</Table.Th>
++                        <Table.Th>{t('kiro.traffic.codes.meaning')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.traffic.codes.requests')}</Table.Th>
++                      </Table.Tr>
++                    </Table.Thead>
++                    <Table.Tbody>
++                      {d.codes.map((c) => (
++                        <Table.Tr key={c.code}>
++                          <Table.Td>
++                            <Badge color={statusColor(c.code).split('.')[0]} variant="light" radius="sm">
++                              {c.code}
++                            </Badge>
++                          </Table.Td>
++                          <Table.Td c="dimmed">{codeMeaning(c.code)}</Table.Td>
++                          <Table.Td ta="right" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                            {num(c.requests)}
++                          </Table.Td>
++                        </Table.Tr>
++                      ))}
++                    </Table.Tbody>
++                  </Table>
++                </Stack>
++              )}
++            </SectionCard>
++          </Grid.Col>
++
++          <Grid.Col span={{ base: 12, lg: 7 }}>
++            <SectionCard title={t('kiro.traffic.routes.title')} hint={t('kiro.traffic.routes.hint')} h="100%">
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !d || d.routes.length === 0 ? (
++                <EmptyState title={t('kiro.traffic.empty.title')} />
++              ) : (
++                <Table verticalSpacing="xs" fz="sm">
++                  <Table.Thead>
++                    <Table.Tr>
++                      <Table.Th>{t('kiro.traffic.routes.name')}</Table.Th>
++                      <Table.Th>{t('kiro.traffic.routes.id')}</Table.Th>
++                      <Table.Th ta="right">{t('kiro.traffic.routes.requests')}</Table.Th>
++                      <Table.Th ta="right">{t('kiro.traffic.routes.share')}</Table.Th>
++                    </Table.Tr>
++                  </Table.Thead>
++                  <Table.Tbody>
++                    {d.routes.map((r) => (
++                      <Table.Tr key={r.id}>
++                        <Table.Td fw={500}>{r.route}</Table.Td>
++                        <Table.Td>
++                          <Text span ff="monospace" size="xs" c="dimmed">
++                            {r.id}
++                          </Text>
++                        </Table.Td>
++                        <Table.Td ta="right" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                          {num(r.requests)}
++                        </Table.Td>
++                        <Table.Td ta="right" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                          {totalRequests > 0 ? `${Math.round((r.requests / totalRequests) * 100)}%` : '–'}
++                        </Table.Td>
++                      </Table.Tr>
++                    ))}
++                  </Table.Tbody>
++                </Table>
++              )}
++            </SectionCard>
++          </Grid.Col>
++
++          <Grid.Col span={12}>
++            <SectionCard title={t('kiro.traffic.bandwidth.title')} hint={t('kiro.traffic.bandwidth.hint')}>
++              {loading ? (
++                <Skeleton height={CHART_H} radius="sm" />
++              ) : !seriesHasData(d?.bandwidth_bytes_per_s) ? (
++                <EmptyState title={t('kiro.traffic.empty.title')} body={t('kiro.traffic.empty.body')} />
++              ) : (
++                <LineChart
++                  h={CHART_H}
++                  data={bandwidthRows}
++                  dataKey="label"
++                  withLegend
++                  curveType="monotone"
++                  valueFormatter={(v) => fmtBytesPerSec(v)}
++                  series={[
++                    { name: 'ingress', label: t('kiro.traffic.bandwidth.ingress'), color: 'cyan.5' },
++                    { name: 'egress', label: t('kiro.traffic.bandwidth.egress'), color: 'violet.5' },
++                  ]}
++                />
++              )}
++            </SectionCard>
++          </Grid.Col>
++        </Grid>
++      </Stack>
++    </Box>
++  );
++};
+diff --git a/src/kiro/observability/traffic/data.ts b/src/kiro/observability/traffic/data.ts
+new file mode 100644
+index 0000000..7219537
+--- /dev/null
++++ b/src/kiro/observability/traffic/data.ts
+@@ -0,0 +1,79 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Pure data helpers shared by the Traffic and Latency observability pages. */
++import type { Series } from '../api';
++
++/** The selectable time windows, in hours (1h / 6h / 24h / 7d). */
++export type RangeHours = 1 | 6 | 24 | 168;
++export const RANGE_HOURS: RangeHours[] = [1, 6, 24, 168];
++
++/** A chart row with a derived, localized `label` column for the x axis. */
++export type ChartRow = { label: string } & Record<string, number | null | string>;
++
++/** Format an epoch-ms x value: hour:minute for short windows, short date for 7d. */
++export const axisLabel = (t: number, daily: boolean, lang?: string): string =>
++  daily
++    ? new Intl.DateTimeFormat(lang, { month: 'short', day: 'numeric', hour: '2-digit' }).format(new Date(t))
++    : new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' }).format(new Date(t));
++
++/** Turn an API Series into recharts-ready rows with a localized `label` x-axis field. */
++export const toChartRows = (series: Series | undefined, hours: number, lang?: string): ChartRow[] => {
++  if (!series) return [];
++  const daily = hours >= 168;
++  return series.rows.map((row) => {
++    const { t, ...rest } = row;
++    return { label: axisLabel(t, daily, lang), ...rest } as ChartRow;
++  });
++};
++
++/** True when at least one series carries a non-zero value across the window. */
++export const seriesHasData = (series: Series | undefined): boolean =>
++  !!series &&
++  series.rows.some((row) => series.series.some((name) => typeof row[name] === 'number' && (row[name] as number) > 0));
++
++/** Flat sparkline array for one series name. */
++export const sparkFrom = (series: Series | undefined, name: string): number[] =>
++  series ? series.rows.map((row) => (typeof row[name] === 'number' ? (row[name] as number) : 0)) : [];
++
++/** Human-readable bytes/second (e.g. 1.2 kB/s, 3.4 MB/s). Null -> en-dash. */
++export const fmtBytesPerSec = (n: number | null | undefined): string => {
++  if (n == null) return '–';
++  if (n < 1) return '0 B/s';
++  const units = ['B/s', 'kB/s', 'MB/s', 'GB/s', 'TB/s'];
++  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1000)));
++  const v = n / 1000 ** i;
++  return `${i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
++};
++
++/** Consistent HTTP status-class -> theme colour mapping used by every chart. */
++export const statusColor = (code: string): string => {
++  if (code === '403') return 'red.5';
++  if (code === '429') return 'orange.5';
++  if (code === '499') return 'gray.5';
++  if (code.startsWith('2')) return 'teal.5';
++  if (code.startsWith('3')) return 'blue.5';
++  if (code.startsWith('4')) return 'yellow.5';
++  if (code.startsWith('5')) return 'red.8';
++  return 'gray.5';
++};
++
++/** Fixed palette for route series (stable across charts on a page). */
++export const ROUTE_COLORS = ['violet.5', 'teal.5', 'blue.5', 'cyan.5', 'orange.5', 'yellow.5', 'gray.5'] as const;
++
++/** Assign a colour to each route series name by position. */
++export const routeSeries = (names: string[]): { name: string; color: string }[] =>
++  names.map((name, i) => ({ name, color: ROUTE_COLORS[i % ROUTE_COLORS.length] }));
+diff --git a/src/kiro/observability/usage/RangeHeader.tsx b/src/kiro/observability/usage/RangeHeader.tsx
+new file mode 100644
+index 0000000..7bd2ca6
+--- /dev/null
++++ b/src/kiro/observability/usage/RangeHeader.tsx
+@@ -0,0 +1,54 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Header actions shared by observability pages: a time-range picker + Grafana escape hatch. */
++import { Button, Group, SegmentedControl } from '@mantine/core';
++import type { FC } from 'react';
++
++import { grafana } from '@/kiro/observability/api';
++import IconExternal from '~icons/tabler/external-link';
++
++export type RangeOption = { value: string; label: string };
++
++/**
++ * Time-range SegmentedControl plus a subtle "Open in Grafana" button. Generic over the
++ * caller's range values so both Usage (1h/6h/24h/7d) and Traces (15m/1h/6h/24h) reuse it.
++ */
++export const RangeHeader: FC<{
++  value: string;
++  onChange: (value: string) => void;
++  options: RangeOption[];
++  rangeAria: string;
++  grafanaUrl: string;
++  grafanaHours: number;
++  grafanaLabel: string;
++}> = ({ value, onChange, options, rangeAria, grafanaUrl, grafanaHours, grafanaLabel }) => (
++  <Group gap="sm" wrap="wrap">
++    <SegmentedControl size="sm" value={value} onChange={onChange} data={options} aria-label={rangeAria} />
++    <Button
++      size="sm"
++      variant="subtle"
++      color="gray"
++      component="a"
++      href={grafana.withRange(grafanaUrl, grafanaHours)}
++      target="_blank"
++      rel="noopener"
++      rightSection={<IconExternal width={14} height={14} />}
++    >
++      {grafanaLabel}
++    </Button>
++  </Group>
++);
+diff --git a/src/kiro/observability/usage/UsagePage.tsx b/src/kiro/observability/usage/UsagePage.tsx
+new file mode 100644
+index 0000000..61c4a2a
+--- /dev/null
++++ b/src/kiro/observability/usage/UsagePage.tsx
+@@ -0,0 +1,298 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** The "Usage" page: who uses Kiro and the AI route, and how many AI tokens they burn. */
++import { AreaChart, BarChart } from '@mantine/charts';
++import { Badge, Box, Grid, Progress, Skeleton, Stack, Table, Text, TextInput } from '@mantine/core';
++import { useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { grafana, useUsage } from '@/kiro/observability/api';
++import { PortalPageHeader } from '@/kiro/shell/Page';
++
++import { fmtNumber } from '../../guardrails/format';
++import { EmptyState, ErrorState, SectionCard } from '../../guardrails/ui';
++import { type RangeHours, sumKey, withAxisLabel } from './data';
++import { RangeHeader } from './RangeHeader';
++
++const KpiTile = ({
++  label,
++  value,
++  note,
++  loading,
++}: {
++  label: string;
++  value: string;
++  note?: string;
++  loading: boolean;
++}) => (
++  <Stack gap={6} h="100%" justify="space-between">
++    <Text size="sm" c="dimmed">
++      {label}
++    </Text>
++    <Box>
++      {loading ? (
++        <Skeleton height={32} width={88} radius="sm" />
++      ) : (
++        <Text fw={650} fz={30} lh={1.1} style={{ fontVariantNumeric: 'tabular-nums' }}>
++          {value}
++        </Text>
++      )}
++      {note && (
++        <Text size="xs" c="dimmed" mt={2}>
++          {note}
++        </Text>
++      )}
++    </Box>
++  </Stack>
++);
++
++export const UsagePage = () => {
++  const { t, i18n } = useTranslation();
++  const [hours, setHours] = useState<RangeHours>(24);
++  const [query, setQuery] = useState('');
++
++  const usage = useUsage(hours);
++  const u = usage.data;
++  const loading = usage.isPending;
++  const num = (n: number | null | undefined) => fmtNumber(n, i18n.language);
++
++  const chatRows = useMemo(
++    () => (u ? withAxisLabel(u.chats_by_path.rows, hours, i18n.language) : []),
++    [u, hours, i18n.language]
++  );
++  const chatsHasData = u ? sumKey(u.chats_by_path.rows, 'Kiro') + sumKey(u.chats_by_path.rows, 'AI route') > 0 : false;
++
++  const tokenRows = useMemo(
++    () => (u ? withAxisLabel(u.tokens_over_time, hours, i18n.language) : []),
++    [u, hours, i18n.language]
++  );
++  const hasTokens = (u?.ai_tokens ?? 0) > 0;
++
++  const maxUserTotal = useMemo(() => Math.max(1, ...(u?.users ?? []).map((r) => r.total)), [u]);
++  const filteredUsers = useMemo(() => {
++    const q = query.trim().toLowerCase();
++    const rows = u?.users ?? [];
++    return q ? rows.filter((r) => r.user.toLowerCase().includes(q)) : rows;
++  }, [u, query]);
++
++  const header = (
++    <RangeHeader
++      value={String(hours)}
++      onChange={(v) => setHours(Number(v) as RangeHours)}
++      options={[
++        { value: '1', label: t('kiro.usage.range.h1') },
++        { value: '6', label: t('kiro.usage.range.h6') },
++        { value: '24', label: t('kiro.usage.range.h24') },
++        { value: '168', label: t('kiro.usage.range.d7') },
++      ]}
++      rangeAria={t('kiro.usage.range.aria')}
++      grafanaUrl={grafana.usage}
++      grafanaHours={hours}
++      grafanaLabel={t('kiro.usage.grafana')}
++    />
++  );
++
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader title={t('kiro.usage.title')} subtitle={t('kiro.usage.subtitle')} actions={header} />
++
++      {usage.error ? (
++        <SectionCard title={t('kiro.usage.title')}>
++          <ErrorState error={usage.error} />
++        </SectionCard>
++      ) : (
++        <Stack gap="md">
++          <Grid gutter="md">
++            {(
++              [
++                ['chats', num(u?.kiro_chats), undefined],
++                ['aiCalls', num(u?.ai_calls), undefined],
++                ['users', num(u?.active_users), undefined],
++                ['tokens', num(u?.ai_tokens), t('kiro.usage.kpi.tokensNote')],
++              ] as const
++            ).map(([key, value, note]) => (
++              <Grid.Col key={key} span={{ base: 12, sm: 6, lg: 3 }}>
++                <SectionCard title={t(`kiro.usage.kpi.${key}`)}>
++                  <KpiTile label="" value={value} note={note} loading={loading} />
++                </SectionCard>
++              </Grid.Col>
++            ))}
++          </Grid>
++
++          <SectionCard title={t('kiro.usage.chats.title')} hint={t('kiro.usage.chats.hint')}>
++            {loading ? (
++              <Skeleton height={260} radius="sm" />
++            ) : !chatsHasData ? (
++              <EmptyState title={t('kiro.usage.chats.empty')} body={t('kiro.usage.chats.emptyBody')} />
++            ) : (
++              <BarChart
++                h={260}
++                data={chatRows}
++                dataKey="label"
++                type="stacked"
++                withLegend
++                valueFormatter={(v) => num(v)}
++                series={[
++                  { name: 'Kiro', label: t('kiro.usage.series.kiro'), color: 'violet.5' },
++                  { name: 'AI route', label: t('kiro.usage.series.aiRoute'), color: 'blue.5' },
++                ]}
++              />
++            )}
++          </SectionCard>
++
++          <SectionCard title={t('kiro.usage.users.title')} hint={t('kiro.usage.users.hint')}>
++            {loading ? (
++              <Skeleton height={220} radius="sm" />
++            ) : !u || u.users.length === 0 ? (
++              <EmptyState title={t('kiro.usage.users.empty')} />
++            ) : (
++              <Stack gap="sm">
++                <TextInput
++                  size="sm"
++                  value={query}
++                  onChange={(e) => setQuery(e.currentTarget.value)}
++                  placeholder={t('kiro.usage.users.searchPlaceholder')}
++                  aria-label={t('kiro.usage.users.searchAria')}
++                  maw={320}
++                />
++                <Table.ScrollContainer minWidth={640}>
++                  <Table highlightOnHover verticalSpacing="xs">
++                    <Table.Thead>
++                      <Table.Tr>
++                        <Table.Th>{t('kiro.usage.users.col.user')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.users.col.kiro')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.users.col.ai')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.users.col.blocked')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.users.col.total')}</Table.Th>
++                        <Table.Th w={160}>{t('kiro.usage.users.col.share')}</Table.Th>
++                      </Table.Tr>
++                    </Table.Thead>
++                    <Table.Tbody>
++                      {filteredUsers.length === 0 ? (
++                        <Table.Tr>
++                          <Table.Td colSpan={6}>
++                            <Text size="sm" c="dimmed" ta="center" py="sm">
++                              {t('kiro.usage.users.noMatch')}
++                            </Text>
++                          </Table.Td>
++                        </Table.Tr>
++                      ) : (
++                        filteredUsers.map((r) => (
++                          <Table.Tr key={r.user}>
++                            <Table.Td>
++                              <Text span ff="monospace" size="sm">
++                                {r.user}
++                              </Text>
++                            </Table.Td>
++                            <Table.Td ta="right">{num(r.kiro)}</Table.Td>
++                            <Table.Td ta="right">{num(r.ai)}</Table.Td>
++                            <Table.Td ta="right">
++                              {r.blocked > 0 ? (
++                                <Badge color="red" variant="light" radius="sm">
++                                  {num(r.blocked)}
++                                </Badge>
++                              ) : (
++                                num(r.blocked)
++                              )}
++                            </Table.Td>
++                            <Table.Td ta="right" fw={600}>
++                              {num(r.total)}
++                            </Table.Td>
++                            <Table.Td>
++                              <Progress
++                                value={(r.total / maxUserTotal) * 100}
++                                color="violet"
++                                size="sm"
++                                radius="xl"
++                                aria-label={t('kiro.usage.users.shareAria', { user: r.user })}
++                              />
++                            </Table.Td>
++                          </Table.Tr>
++                        ))
++                      )}
++                    </Table.Tbody>
++                  </Table>
++                </Table.ScrollContainer>
++              </Stack>
++            )}
++          </SectionCard>
++
++          <Grid gutter="md">
++            <Grid.Col span={{ base: 12, lg: 6 }}>
++              <SectionCard title={t('kiro.usage.tokens.title')} hint={t('kiro.usage.tokens.hint')} h="100%">
++                {loading ? (
++                  <Skeleton height={200} radius="sm" />
++                ) : !hasTokens || !u || u.tokens_by_consumer.length === 0 ? (
++                  <EmptyState title={t('kiro.usage.tokens.empty')} body={t('kiro.usage.tokens.emptyBody')} />
++                ) : (
++                  <Table verticalSpacing="xs">
++                    <Table.Thead>
++                      <Table.Tr>
++                        <Table.Th>{t('kiro.usage.tokens.col.consumer')}</Table.Th>
++                        <Table.Th>{t('kiro.usage.tokens.col.model')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.tokens.col.prompt')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.tokens.col.completion')}</Table.Th>
++                        <Table.Th ta="right">{t('kiro.usage.tokens.col.total')}</Table.Th>
++                      </Table.Tr>
++                    </Table.Thead>
++                    <Table.Tbody>
++                      {u.tokens_by_consumer.map((r) => (
++                        <Table.Tr key={`${r.consumer}:${r.model}`}>
++                          <Table.Td>
++                            <Text span ff="monospace" size="sm">
++                              {r.consumer}
++                            </Text>
++                          </Table.Td>
++                          <Table.Td>{r.model}</Table.Td>
++                          <Table.Td ta="right">{num(r.prompt)}</Table.Td>
++                          <Table.Td ta="right">{num(r.completion)}</Table.Td>
++                          <Table.Td ta="right" fw={600}>
++                            {num(r.prompt + r.completion)}
++                          </Table.Td>
++                        </Table.Tr>
++                      ))}
++                    </Table.Tbody>
++                  </Table>
++                )}
++              </SectionCard>
++            </Grid.Col>
++
++            <Grid.Col span={{ base: 12, lg: 6 }}>
++              <SectionCard title={t('kiro.usage.tokensChart.title')} hint={t('kiro.usage.tokensChart.hint')} h="100%">
++                {loading ? (
++                  <Skeleton height={200} radius="sm" />
++                ) : !hasTokens ? (
++                  <EmptyState title={t('kiro.usage.tokensChart.empty')} body={t('kiro.usage.tokensChart.emptyBody')} />
++                ) : (
++                  <AreaChart
++                    h={200}
++                    data={tokenRows}
++                    dataKey="label"
++                    curveType="monotone"
++                    withDots={false}
++                    valueFormatter={(v) => num(v)}
++                    series={[{ name: 'tokens', label: t('kiro.usage.series.tokens'), color: 'teal.5' }]}
++                  />
++                )}
++              </SectionCard>
++            </Grid.Col>
++          </Grid>
++        </Stack>
++      )}
++    </Box>
++  );
++};
+diff --git a/src/kiro/observability/usage/data.ts b/src/kiro/observability/usage/data.ts
+new file mode 100644
+index 0000000..ea30d74
+--- /dev/null
++++ b/src/kiro/observability/usage/data.ts
+@@ -0,0 +1,40 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Pure data helpers for the Usage page: time ranges and chart row shaping. */
++
++/** The four selectable observability windows, in hours. */
++export type RangeHours = 1 | 6 | 24 | 168;
++
++/** Chart-ready series rows carry `t` (epoch ms) plus one numeric key per series. */
++type SeriesRow = { t: number } & Record<string, number>;
++
++/**
++ * Attach a local-time axis label to each series row. Daily windows (7d) show a
++ * short date; shorter windows show the hour. The original numeric keys are kept.
++ */
++export const withAxisLabel = <T extends SeriesRow>(rows: T[], hours: RangeHours, lang?: string) => {
++  const daily = hours === 168;
++  const fmt = new Intl.DateTimeFormat(
++    lang,
++    daily ? { month: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' }
++  );
++  return rows.map((r) => ({ ...r, label: fmt.format(new Date(r.t)) }));
++};
++
++/** Sum one series key across rows (treats missing / null as 0). */
++export const sumKey = (rows: SeriesRow[], key: string): number =>
++  rows.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 77c55ba..9691e7e 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -794,6 +794,237 @@
+         "appliedTitle": "Regeln angewendet",
+         "appliedBody": "Als Commit {{commit}} gespeichert."
+       }
++    },
++    "traffic": {
++      "title": "Traffic",
++      "subtitle": "Wie viele Anfragen durchkamen, was das Gateway beantwortete und wie viele Daten flossen.",
++      "range": {
++        "aria": "Zeitraum",
++        "h1": "1 Std",
++        "h6": "6 Std",
++        "h24": "24 Std",
++        "d7": "7 T",
++        "grafana": "In Grafana öffnen"
++      },
++      "unit": {
++        "rpm": "Anfr./Min"
++      },
++      "kpi": {
++        "requests": "Anfragen im Zeitraum",
++        "requestsNote": "Gesamtzahl der vom Gateway bearbeiteten Anfragen.",
++        "blocked": "Von Guardrails blockiert",
++        "blockedNote": "Von einem Guardrail gestoppte Anfragen (403).",
++        "limited": "Ratenbegrenzt",
++        "limitedNote": "Wegen zu schneller Anfragen abgewiesen (429).",
++        "errors": "Serverfehler (5xx)",
++        "errorsNote": "Fehler im Gateway oder Upstream."
++      },
++      "byRoute": {
++        "title": "Anfragen pro Minute nach Route",
++        "hint": "Zu welchem Upstream jede Anfrage ging, Minute für Minute."
++      },
++      "byCode": {
++        "title": "Antworten nach Statuscode",
++        "hint": "403 = vom Guardrail blockiert; 429 = ratenbegrenzt; 499 = Client hat zuerst getrennt (harmlos)."
++      },
++      "codes": {
++        "title": "Statuscode-Summen",
++        "hint": "Alle Antworten nach HTTP-Statuscode gruppiert.",
++        "code": "Code",
++        "meaning": "Bedeutung",
++        "requests": "Anfragen"
++      },
++      "codeMeaning": {
++        "ok": "OK",
++        "badRequest": "Ungültige Anfrage",
++        "unauth": "Nicht angemeldet",
++        "blocked": "Von einem Guardrail blockiert",
++        "notFound": "Nicht gefunden",
++        "limited": "Ratenbegrenzt",
++        "clientClosed": "Client hat die Verbindung geschlossen",
++        "serverError": "Gateway-/Upstream-Fehler"
++      },
++      "routes": {
++        "title": "Routen",
++        "hint": "Anfragevolumen pro Route in diesem Zeitraum.",
++        "name": "Route",
++        "id": "ID",
++        "requests": "Anfragen",
++        "share": "Anteil"
++      },
++      "bandwidth": {
++        "title": "Bandbreite",
++        "hint": "Bytes pro Sekunde durch das Gateway, ein- und ausgehend.",
++        "ingress": "Eingehend",
++        "egress": "Ausgehend"
++      },
++      "empty": {
++        "title": "Noch kein Traffic",
++        "body": "In diesem Zeitraum kam nichts durch das Gateway. Versuchen Sie ein größeres Fenster."
++      }
++    },
++    "latency": {
++      "title": "Latenz",
++      "subtitle": "Wie lange Anfragen dauerten — und ob die Zeit im Gateway oder beim Warten auf den Upstream verging.",
++      "kpi": {
++        "chat": "Kiro-Chat (p50 / p95)",
++        "chatNote": "Enthält sofort beantwortete blockierte Anfragen, daher kann p50 winzig wirken. Die Übersicht zeigt nur abgeschlossene Chats.",
++        "gateway": "Gateway-Overhead (p50 / p95)",
++        "gatewayNote": "Zeit, die APISIX selbst hinzufügt: Guardrails, Routing.",
++        "upstream": "Upstream (p95)",
++        "upstreamNote": "Zeit im Kiro-/AWS-Backend."
++      },
++      "split": {
++        "title": "Wo die Zeit hingeht",
++        "hint": "Beim p95, wie sich die Gesamtzeit auf Gateway und Upstream verteilt.",
++        "gateway": "Gateway",
++        "upstream": "Upstream (Kiro / AWS)",
++        "explain": "Beim 95. Perzentil fügt das Gateway {{gw}} hinzu und der Upstream braucht {{up}}. Langsame Zeit entfällt fast immer auf den Upstream, nicht auf das Gateway."
++      },
++      "pctToggle": {
++        "aria": "Perzentil",
++        "p50": "p50",
++        "p95": "p95"
++      },
++      "byRoute": {
++        "title": "Latenz nach Route",
++        "hint": "Wählen Sie mit dem Umschalter p50 (typisch) oder p95 (langsamer Rand)."
++      },
++      "gwVsUp": {
++        "title": "Gateway vs. Upstream (p95)",
++        "hint": "Die Gateway-Linie sollte flach und niedrig bleiben; Spitzen kommen vom Upstream."
++      },
++      "routes": {
++        "title": "Routen",
++        "hint": "p95 wird über 1 s gelb und über 5 s rot markiert.",
++        "name": "Route",
++        "id": "ID",
++        "p50": "p50",
++        "p95": "p95",
++        "requests": "Anfragen"
++      },
++      "empty": {
++        "title": "Noch keine Latenzdaten",
++        "body": "In diesem Zeitraum wurden keine Anfragen gemessen. Versuchen Sie ein größeres Fenster."
++      }
++    },
++    "usage": {
++      "title": "Nutzung",
++      "subtitle": "Wer Kiro und die AI-Route nutzt – und wie stark",
++      "grafana": "In Grafana öffnen",
++      "range": {
++        "aria": "Zeitraum",
++        "h1": "1 Std",
++        "h6": "6 Std",
++        "h24": "24 Std",
++        "d7": "7 T"
++      },
++      "kpi": {
++        "chats": "Kiro-Chats",
++        "aiCalls": "AI-Route-Aufrufe",
++        "users": "Aktive Nutzer",
++        "tokens": "AI-Tokens",
++        "tokensNote": "nur die AI-Route meldet Tokens"
++      },
++      "series": {
++        "kiro": "Kiro",
++        "aiRoute": "AI-Route",
++        "tokens": "Tokens"
++      },
++      "chats": {
++        "title": "Chats im Zeitverlauf",
++        "hint": "Anfragen pro Intervall, nach Pfad aufgeteilt.",
++        "empty": "Keine Chats in diesem Zeitraum",
++        "emptyBody": "Es wurde noch nichts über Kiro oder die AI-Route gesendet."
++      },
++      "users": {
++        "title": "Wer es nutzt",
++        "hint": "Kiro-IDs sind Token-Hashes und ändern sich bei einer Token-Aktualisierung.",
++        "empty": "Keine Nutzer in diesem Zeitraum",
++        "noMatch": "Keine Nutzer passen zur Suche",
++        "searchPlaceholder": "Nutzer suchen…",
++        "searchAria": "Nutzer suchen",
++        "shareAria": "Anteil am Gesamtwert für {{user}}",
++        "col": {
++          "user": "Nutzer",
++          "kiro": "Kiro-Chats",
++          "ai": "AI-Aufrufe",
++          "blocked": "Blockiert",
++          "total": "Gesamt",
++          "share": "Anteil"
++        }
++      },
++      "tokens": {
++        "title": "AI-Tokens nach Verbraucher und Modell",
++        "hint": "Prompt- und Completion-Tokens, gemeldet von der AI-Route.",
++        "empty": "Noch keine Tokens",
++        "emptyBody": "Nur die AI-Route meldet Token-Zahlen; Kiro-Chats haben keine.",
++        "col": {
++          "consumer": "Verbraucher",
++          "model": "Modell",
++          "prompt": "Prompt",
++          "completion": "Completion",
++          "total": "Gesamt"
++        }
++      },
++      "tokensChart": {
++        "title": "Tokens im Zeitverlauf",
++        "hint": "AI-Tokens gesamt pro Intervall.",
++        "empty": "Noch keine Tokens",
++        "emptyBody": "Nur die AI-Route meldet Token-Zahlen."
++      }
++    },
++    "traces": {
++      "title": "Traces",
++      "subtitle": "Eine einzelne Anfrage durch das Gateway verfolgen",
++      "grafana": "In Grafana öffnen",
++      "range": {
++        "aria": "Zeitraum",
++        "m15": "15 Min",
++        "h1": "1 Std",
++        "h6": "6 Std",
++        "h24": "24 Std"
++      },
++      "filter": {
++        "aria": "Trace-Filter",
++        "chat": "Chat-Anfragen",
++        "all": "Alle",
++        "slow": "Langsam (>1 s)",
++        "errors": "Fehler"
++      },
++      "host": {
++        "kiroChat": "Kiro-Chat",
++        "kiroApi": "Kiro-API",
++        "kiroAccount": "Kiro-Konto",
++        "aiRoute": "AI-Route"
++      },
++      "list": {
++        "title": "Neueste Anfragen",
++        "hint": "Auf eine Anfrage klicken, um ihren vollständigen Wasserfall zu sehen. Langsam = über 1 Sekunde.",
++        "empty": "Keine Traces in diesem Zeitraum",
++        "emptyBody": "Keine Anfragen passen zu Filter und Zeitraum, oder Traces sind abgelaufen."
++      },
++      "col": {
++        "time": "Zeit",
++        "request": "Anfrage",
++        "host": "Host",
++        "status": "Status",
++        "duration": "Dauer"
++      },
++      "detail": {
++        "title": "Trace-Details",
++        "total": "Gesamt",
++        "host": "Host",
++        "traceId": "Trace-ID",
++        "copyId": "Trace-ID kopieren",
++        "openGrafana": "In Grafana öffnen",
++        "waterfall": "Wasserfall",
++        "requestAttrs": "Anfrageattribute",
++        "work": "Gateway-Arbeit: {{gateway}} · Warten auf Upstream: {{upstream}}",
++        "workGatewayOnly": "Gateway-Arbeit: {{gateway}}",
++        "goneTitle": "Dieser Trace ist nicht mehr verfügbar",
++        "goneBody": "Traces laufen nach einer Aufbewahrungsfrist ab. Versuche eine neuere Anfrage zu öffnen."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index 914cccb..1def005 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -794,6 +794,237 @@
+         "appliedTitle": "Rules applied",
+         "appliedBody": "Saved as commit {{commit}}."
+       }
++    },
++    "traffic": {
++      "title": "Traffic",
++      "subtitle": "How many requests came through, what the gateway answered, and how much data moved.",
++      "range": {
++        "aria": "Time range",
++        "h1": "1h",
++        "h6": "6h",
++        "h24": "24h",
++        "d7": "7d",
++        "grafana": "Open in Grafana"
++      },
++      "unit": {
++        "rpm": "req/min"
++      },
++      "kpi": {
++        "requests": "Requests in window",
++        "requestsNote": "Total requests the gateway handled in this time range.",
++        "blocked": "Blocked by guardrails",
++        "blockedNote": "Requests a guardrail stopped (403).",
++        "limited": "Rate limited",
++        "limitedNote": "Requests turned away for sending too fast (429).",
++        "errors": "Server errors (5xx)",
++        "errorsNote": "Gateway or upstream failures."
++      },
++      "byRoute": {
++        "title": "Requests per minute by route",
++        "hint": "Which upstream each request went to, minute by minute."
++      },
++      "byCode": {
++        "title": "Responses by status code",
++        "hint": "403 = blocked by a guardrail; 429 = rate limited; 499 = the client closed the connection first (harmless)."
++      },
++      "codes": {
++        "title": "Status code totals",
++        "hint": "Every response grouped by HTTP status code.",
++        "code": "Code",
++        "meaning": "Meaning",
++        "requests": "Requests"
++      },
++      "codeMeaning": {
++        "ok": "OK",
++        "badRequest": "Bad request",
++        "unauth": "Not signed in",
++        "blocked": "Blocked by a guardrail",
++        "notFound": "Not found",
++        "limited": "Rate limited",
++        "clientClosed": "Client closed the connection",
++        "serverError": "Gateway / upstream error"
++      },
++      "routes": {
++        "title": "Routes",
++        "hint": "Request volume per route in this window.",
++        "name": "Route",
++        "id": "ID",
++        "requests": "Requests",
++        "share": "Share"
++      },
++      "bandwidth": {
++        "title": "Bandwidth",
++        "hint": "Bytes moving through the gateway per second, in and out.",
++        "ingress": "Ingress (in)",
++        "egress": "Egress (out)"
++      },
++      "empty": {
++        "title": "No traffic yet",
++        "body": "Nothing came through the gateway in this time range. Try a wider window."
++      }
++    },
++    "latency": {
++      "title": "Latency",
++      "subtitle": "How long requests took — and whether the time was spent in the gateway or waiting on the upstream.",
++      "kpi": {
++        "chat": "Kiro chat (p50 / p95)",
++        "chatNote": "Includes blocked requests answered instantly, so p50 can look tiny. The Overview page shows completed chats only.",
++        "gateway": "Gateway overhead (p50 / p95)",
++        "gatewayNote": "Time APISIX itself adds: guardrails, routing.",
++        "upstream": "Upstream (p95)",
++        "upstreamNote": "Time spent in the Kiro / AWS backend."
++      },
++      "split": {
++        "title": "Where the time goes",
++        "hint": "At p95, how the total splits between the gateway and the upstream.",
++        "gateway": "Gateway",
++        "upstream": "Upstream (Kiro / AWS)",
++        "explain": "At the 95th percentile the gateway adds {{gw}} and the upstream takes {{up}}. Most slow time is almost always the upstream, not the gateway."
++      },
++      "pctToggle": {
++        "aria": "Percentile",
++        "p50": "p50",
++        "p95": "p95"
++      },
++      "byRoute": {
++        "title": "Latency by route",
++        "hint": "Pick p50 (typical) or p95 (slow tail) with the toggle."
++      },
++      "gwVsUp": {
++        "title": "Gateway vs upstream (p95)",
++        "hint": "The gateway line should stay flat and low; spikes come from the upstream."
++      },
++      "routes": {
++        "title": "Routes",
++        "hint": "p95 is flagged yellow above 1 s and red above 5 s.",
++        "name": "Route",
++        "id": "ID",
++        "p50": "p50",
++        "p95": "p95",
++        "requests": "Requests"
++      },
++      "empty": {
++        "title": "No latency data yet",
++        "body": "No requests were timed in this range. Try a wider window."
++      }
++    },
++    "usage": {
++      "title": "Usage",
++      "subtitle": "Who uses Kiro and the AI route, and how much",
++      "grafana": "Open in Grafana",
++      "range": {
++        "aria": "Time range",
++        "h1": "1h",
++        "h6": "6h",
++        "h24": "24h",
++        "d7": "7d"
++      },
++      "kpi": {
++        "chats": "Kiro chats",
++        "aiCalls": "AI route calls",
++        "users": "Active users",
++        "tokens": "AI tokens",
++        "tokensNote": "only the AI route reports tokens"
++      },
++      "series": {
++        "kiro": "Kiro",
++        "aiRoute": "AI route",
++        "tokens": "Tokens"
++      },
++      "chats": {
++        "title": "Chats over time",
++        "hint": "Requests per bucket, split by path.",
++        "empty": "No chats in this window",
++        "emptyBody": "Nothing has gone through Kiro or the AI route yet."
++      },
++      "users": {
++        "title": "Who is using it",
++        "hint": "Kiro ids are token hashes and change when a token refreshes.",
++        "empty": "No users in this window",
++        "noMatch": "No users match your search",
++        "searchPlaceholder": "Search users…",
++        "searchAria": "Search users",
++        "shareAria": "Share of total for {{user}}",
++        "col": {
++          "user": "User",
++          "kiro": "Kiro chats",
++          "ai": "AI calls",
++          "blocked": "Blocked",
++          "total": "Total",
++          "share": "Share"
++        }
++      },
++      "tokens": {
++        "title": "AI tokens by consumer and model",
++        "hint": "Prompt and completion tokens reported by the AI route.",
++        "empty": "No tokens yet",
++        "emptyBody": "Only the AI route reports token counts; Kiro chats have none.",
++        "col": {
++          "consumer": "Consumer",
++          "model": "Model",
++          "prompt": "Prompt",
++          "completion": "Completion",
++          "total": "Total"
++        }
++      },
++      "tokensChart": {
++        "title": "Tokens over time",
++        "hint": "Total AI tokens per bucket.",
++        "empty": "No tokens yet",
++        "emptyBody": "Only the AI route reports token counts."
++      }
++    },
++    "traces": {
++      "title": "Traces",
++      "subtitle": "Follow a single request through the gateway",
++      "grafana": "Open in Grafana",
++      "range": {
++        "aria": "Time range",
++        "m15": "15m",
++        "h1": "1h",
++        "h6": "6h",
++        "h24": "24h"
++      },
++      "filter": {
++        "aria": "Trace filter",
++        "chat": "Chat requests",
++        "all": "All",
++        "slow": "Slow (>1s)",
++        "errors": "Errors"
++      },
++      "host": {
++        "kiroChat": "Kiro chat",
++        "kiroApi": "Kiro API",
++        "kiroAccount": "Kiro account",
++        "aiRoute": "AI route"
++      },
++      "list": {
++        "title": "Recent requests",
++        "hint": "Click a request to see its full waterfall. Slow = over 1 second.",
++        "empty": "No traces in this window",
++        "emptyBody": "No requests match this filter and range, or traces have aged out."
++      },
++      "col": {
++        "time": "Time",
++        "request": "Request",
++        "host": "Host",
++        "status": "Status",
++        "duration": "Duration"
++      },
++      "detail": {
++        "title": "Trace detail",
++        "total": "Total",
++        "host": "Host",
++        "traceId": "Trace id",
++        "copyId": "Copy trace id",
++        "openGrafana": "Open in Grafana",
++        "waterfall": "Waterfall",
++        "requestAttrs": "Request attributes",
++        "work": "Gateway work: {{gateway}} · Waiting for upstream: {{upstream}}",
++        "workGatewayOnly": "Gateway work: {{gateway}}",
++        "goneTitle": "This trace is no longer available",
++        "goneBody": "Traces age out after a retention window. Try opening a more recent request."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 1237765..ff9518a 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -794,6 +794,237 @@
+         "appliedTitle": "Reglas aplicadas",
+         "appliedBody": "Guardado como commit {{commit}}."
+       }
++    },
++    "traffic": {
++      "title": "Tráfico",
++      "subtitle": "Cuántas solicitudes llegaron, qué respondió la puerta de enlace y cuántos datos se movieron.",
++      "range": {
++        "aria": "Intervalo de tiempo",
++        "h1": "1 h",
++        "h6": "6 h",
++        "h24": "24 h",
++        "d7": "7 d",
++        "grafana": "Abrir en Grafana"
++      },
++      "unit": {
++        "rpm": "sol./min"
++      },
++      "kpi": {
++        "requests": "Solicitudes en el intervalo",
++        "requestsNote": "Total de solicitudes que gestionó la puerta de enlace.",
++        "blocked": "Bloqueadas por guardarraíles",
++        "blockedNote": "Solicitudes que un guardarraíl detuvo (403).",
++        "limited": "Limitadas por tasa",
++        "limitedNote": "Rechazadas por enviar demasiado rápido (429).",
++        "errors": "Errores de servidor (5xx)",
++        "errorsNote": "Fallos de la puerta de enlace o del upstream."
++      },
++      "byRoute": {
++        "title": "Solicitudes por minuto por ruta",
++        "hint": "A qué upstream fue cada solicitud, minuto a minuto."
++      },
++      "byCode": {
++        "title": "Respuestas por código de estado",
++        "hint": "403 = bloqueada por un guardarraíl; 429 = limitada por tasa; 499 = el cliente cerró la conexión primero (inofensivo)."
++      },
++      "codes": {
++        "title": "Totales por código de estado",
++        "hint": "Todas las respuestas agrupadas por código HTTP.",
++        "code": "Código",
++        "meaning": "Significado",
++        "requests": "Solicitudes"
++      },
++      "codeMeaning": {
++        "ok": "OK",
++        "badRequest": "Solicitud incorrecta",
++        "unauth": "No autenticado",
++        "blocked": "Bloqueada por un guardarraíl",
++        "notFound": "No encontrado",
++        "limited": "Limitada por tasa",
++        "clientClosed": "El cliente cerró la conexión",
++        "serverError": "Error de puerta de enlace / upstream"
++      },
++      "routes": {
++        "title": "Rutas",
++        "hint": "Volumen de solicitudes por ruta en este intervalo.",
++        "name": "Ruta",
++        "id": "ID",
++        "requests": "Solicitudes",
++        "share": "Porcentaje"
++      },
++      "bandwidth": {
++        "title": "Ancho de banda",
++        "hint": "Bytes por segundo a través de la puerta de enlace, de entrada y salida.",
++        "ingress": "Entrada",
++        "egress": "Salida"
++      },
++      "empty": {
++        "title": "Aún no hay tráfico",
++        "body": "No llegó nada a la puerta de enlace en este intervalo. Prueba una ventana más amplia."
++      }
++    },
++    "latency": {
++      "title": "Latencia",
++      "subtitle": "Cuánto tardaron las solicitudes — y si el tiempo se gastó en la puerta de enlace o esperando al upstream.",
++      "kpi": {
++        "chat": "Chat de Kiro (p50 / p95)",
++        "chatNote": "Incluye solicitudes bloqueadas respondidas al instante, por lo que p50 puede parecer mínimo. La página Resumen muestra solo chats completados.",
++        "gateway": "Sobrecarga de la puerta de enlace (p50 / p95)",
++        "gatewayNote": "Tiempo que añade APISIX: guardarraíles, enrutamiento.",
++        "upstream": "Upstream (p95)",
++        "upstreamNote": "Tiempo en el backend de Kiro / AWS."
++      },
++      "split": {
++        "title": "A dónde va el tiempo",
++        "hint": "En el p95, cómo se reparte el total entre la puerta de enlace y el upstream.",
++        "gateway": "Puerta de enlace",
++        "upstream": "Upstream (Kiro / AWS)",
++        "explain": "En el percentil 95 la puerta de enlace añade {{gw}} y el upstream tarda {{up}}. El tiempo lento casi siempre es del upstream, no de la puerta de enlace."
++      },
++      "pctToggle": {
++        "aria": "Percentil",
++        "p50": "p50",
++        "p95": "p95"
++      },
++      "byRoute": {
++        "title": "Latencia por ruta",
++        "hint": "Elige p50 (típico) o p95 (cola lenta) con el conmutador."
++      },
++      "gwVsUp": {
++        "title": "Puerta de enlace vs upstream (p95)",
++        "hint": "La línea de la puerta de enlace debe mantenerse plana y baja; los picos vienen del upstream."
++      },
++      "routes": {
++        "title": "Rutas",
++        "hint": "p95 se marca en amarillo por encima de 1 s y en rojo por encima de 5 s.",
++        "name": "Ruta",
++        "id": "ID",
++        "p50": "p50",
++        "p95": "p95",
++        "requests": "Solicitudes"
++      },
++      "empty": {
++        "title": "Aún no hay datos de latencia",
++        "body": "No se midió ninguna solicitud en este intervalo. Prueba una ventana más amplia."
++      }
++    },
++    "usage": {
++      "title": "Uso",
++      "subtitle": "Quién usa Kiro y la ruta de IA, y cuánto",
++      "grafana": "Abrir en Grafana",
++      "range": {
++        "aria": "Rango de tiempo",
++        "h1": "1 h",
++        "h6": "6 h",
++        "h24": "24 h",
++        "d7": "7 d"
++      },
++      "kpi": {
++        "chats": "Chats de Kiro",
++        "aiCalls": "Llamadas a la ruta de IA",
++        "users": "Usuarios activos",
++        "tokens": "Tokens de IA",
++        "tokensNote": "solo la ruta de IA informa tokens"
++      },
++      "series": {
++        "kiro": "Kiro",
++        "aiRoute": "Ruta de IA",
++        "tokens": "Tokens"
++      },
++      "chats": {
++        "title": "Chats a lo largo del tiempo",
++        "hint": "Solicitudes por intervalo, divididas por ruta.",
++        "empty": "Sin chats en este periodo",
++        "emptyBody": "Aún no ha pasado nada por Kiro ni por la ruta de IA."
++      },
++      "users": {
++        "title": "Quién lo usa",
++        "hint": "Los ids de Kiro son hashes de token y cambian al renovarse un token.",
++        "empty": "Sin usuarios en este periodo",
++        "noMatch": "Ningún usuario coincide con la búsqueda",
++        "searchPlaceholder": "Buscar usuarios…",
++        "searchAria": "Buscar usuarios",
++        "shareAria": "Proporción del total de {{user}}",
++        "col": {
++          "user": "Usuario",
++          "kiro": "Chats de Kiro",
++          "ai": "Llamadas de IA",
++          "blocked": "Bloqueadas",
++          "total": "Total",
++          "share": "Proporción"
++        }
++      },
++      "tokens": {
++        "title": "Tokens de IA por consumidor y modelo",
++        "hint": "Tokens de prompt y de completado informados por la ruta de IA.",
++        "empty": "Aún no hay tokens",
++        "emptyBody": "Solo la ruta de IA informa recuentos de tokens; los chats de Kiro no tienen.",
++        "col": {
++          "consumer": "Consumidor",
++          "model": "Modelo",
++          "prompt": "Prompt",
++          "completion": "Completado",
++          "total": "Total"
++        }
++      },
++      "tokensChart": {
++        "title": "Tokens a lo largo del tiempo",
++        "hint": "Total de tokens de IA por intervalo.",
++        "empty": "Aún no hay tokens",
++        "emptyBody": "Solo la ruta de IA informa recuentos de tokens."
++      }
++    },
++    "traces": {
++      "title": "Trazas",
++      "subtitle": "Sigue una sola solicitud a través de la puerta de enlace",
++      "grafana": "Abrir en Grafana",
++      "range": {
++        "aria": "Rango de tiempo",
++        "m15": "15 min",
++        "h1": "1 h",
++        "h6": "6 h",
++        "h24": "24 h"
++      },
++      "filter": {
++        "aria": "Filtro de trazas",
++        "chat": "Solicitudes de chat",
++        "all": "Todas",
++        "slow": "Lentas (>1 s)",
++        "errors": "Errores"
++      },
++      "host": {
++        "kiroChat": "Chat de Kiro",
++        "kiroApi": "API de Kiro",
++        "kiroAccount": "Cuenta de Kiro",
++        "aiRoute": "Ruta de IA"
++      },
++      "list": {
++        "title": "Solicitudes recientes",
++        "hint": "Haz clic en una solicitud para ver su cascada completa. Lenta = más de 1 segundo.",
++        "empty": "Sin trazas en este periodo",
++        "emptyBody": "Ninguna solicitud coincide con este filtro y rango, o las trazas han caducado."
++      },
++      "col": {
++        "time": "Hora",
++        "request": "Solicitud",
++        "host": "Host",
++        "status": "Estado",
++        "duration": "Duración"
++      },
++      "detail": {
++        "title": "Detalle de la traza",
++        "total": "Total",
++        "host": "Host",
++        "traceId": "Id de traza",
++        "copyId": "Copiar id de traza",
++        "openGrafana": "Abrir en Grafana",
++        "waterfall": "Cascada",
++        "requestAttrs": "Atributos de la solicitud",
++        "work": "Trabajo de la puerta de enlace: {{gateway}} · Esperando al upstream: {{upstream}}",
++        "workGatewayOnly": "Trabajo de la puerta de enlace: {{gateway}}",
++        "goneTitle": "Esta traza ya no está disponible",
++        "goneBody": "Las trazas caducan tras un periodo de retención. Prueba a abrir una solicitud más reciente."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 4d68bdf..46a30bb 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -794,6 +794,237 @@
+         "appliedTitle": "Kurallar uygulandı",
+         "appliedBody": "{{commit}} işlemesi olarak kaydedildi."
+       }
++    },
++    "traffic": {
++      "title": "Trafik",
++      "subtitle": "Kaç istek geldi, ağ geçidi ne yanıtladı ve ne kadar veri aktarıldı.",
++      "range": {
++        "aria": "Zaman aralığı",
++        "h1": "1 sa",
++        "h6": "6 sa",
++        "h24": "24 sa",
++        "d7": "7 g",
++        "grafana": "Grafana'da aç"
++      },
++      "unit": {
++        "rpm": "istek/dk"
++      },
++      "kpi": {
++        "requests": "Aralıktaki istekler",
++        "requestsNote": "Ağ geçidinin bu aralıkta işlediği toplam istek.",
++        "blocked": "Korumalarca engellendi",
++        "blockedNote": "Bir korumanın durdurduğu istekler (403).",
++        "limited": "Hız sınırlandı",
++        "limitedNote": "Çok hızlı gönderildiği için reddedildi (429).",
++        "errors": "Sunucu hataları (5xx)",
++        "errorsNote": "Ağ geçidi veya upstream hataları."
++      },
++      "byRoute": {
++        "title": "Rotaya göre dakikada istek",
++        "hint": "Her isteğin hangi upstream'e gittiği, dakika dakika."
++      },
++      "byCode": {
++        "title": "Durum koduna göre yanıtlar",
++        "hint": "403 = koruma engelledi; 429 = hız sınırı; 499 = istemci bağlantıyı önce kapattı (zararsız)."
++      },
++      "codes": {
++        "title": "Durum kodu toplamları",
++        "hint": "Tüm yanıtlar HTTP durum koduna göre gruplandı.",
++        "code": "Kod",
++        "meaning": "Anlamı",
++        "requests": "İstek"
++      },
++      "codeMeaning": {
++        "ok": "Tamam",
++        "badRequest": "Hatalı istek",
++        "unauth": "Giriş yapılmadı",
++        "blocked": "Bir koruma tarafından engellendi",
++        "notFound": "Bulunamadı",
++        "limited": "Hız sınırlandı",
++        "clientClosed": "İstemci bağlantıyı kapattı",
++        "serverError": "Ağ geçidi / upstream hatası"
++      },
++      "routes": {
++        "title": "Rotalar",
++        "hint": "Bu aralıkta rota başına istek hacmi.",
++        "name": "Rota",
++        "id": "Kimlik",
++        "requests": "İstek",
++        "share": "Pay"
++      },
++      "bandwidth": {
++        "title": "Bant genişliği",
++        "hint": "Ağ geçidinden saniyede geçen bayt, gelen ve giden.",
++        "ingress": "Gelen",
++        "egress": "Giden"
++      },
++      "empty": {
++        "title": "Henüz trafik yok",
++        "body": "Bu aralıkta ağ geçidinden hiçbir şey geçmedi. Daha geniş bir pencere deneyin."
++      }
++    },
++    "latency": {
++      "title": "Gecikme",
++      "subtitle": "İsteklerin ne kadar sürdüğü — ve zamanın ağ geçidinde mi yoksa upstream'i beklerken mi geçtiği.",
++      "kpi": {
++        "chat": "Kiro sohbet (p50 / p95)",
++        "chatNote": "Anında yanıtlanan engellenmiş istekleri içerir, bu yüzden p50 çok küçük görünebilir. Genel Bakış sayfası yalnızca tamamlanan sohbetleri gösterir.",
++        "gateway": "Ağ geçidi ek yükü (p50 / p95)",
++        "gatewayNote": "APISIX'in kendi eklediği süre: korumalar, yönlendirme.",
++        "upstream": "Upstream (p95)",
++        "upstreamNote": "Kiro / AWS arka ucunda geçen süre."
++      },
++      "split": {
++        "title": "Zaman nereye gidiyor",
++        "hint": "p95'te toplamın ağ geçidi ile upstream arasında nasıl bölündüğü.",
++        "gateway": "Ağ geçidi",
++        "upstream": "Upstream (Kiro / AWS)",
++        "explain": "95. yüzdelik dilimde ağ geçidi {{gw}} ekler ve upstream {{up}} alır. Yavaş sürenin neredeyse tamamı ağ geçidi değil upstream kaynaklıdır."
++      },
++      "pctToggle": {
++        "aria": "Yüzdelik",
++        "p50": "p50",
++        "p95": "p95"
++      },
++      "byRoute": {
++        "title": "Rotaya göre gecikme",
++        "hint": "Düğmeyle p50 (tipik) veya p95 (yavaş uç) seçin."
++      },
++      "gwVsUp": {
++        "title": "Ağ geçidi vs upstream (p95)",
++        "hint": "Ağ geçidi çizgisi düz ve düşük kalmalı; sıçramalar upstream'den gelir."
++      },
++      "routes": {
++        "title": "Rotalar",
++        "hint": "p95, 1 sn üzerinde sarı, 5 sn üzerinde kırmızı işaretlenir.",
++        "name": "Rota",
++        "id": "Kimlik",
++        "p50": "p50",
++        "p95": "p95",
++        "requests": "İstek"
++      },
++      "empty": {
++        "title": "Henüz gecikme verisi yok",
++        "body": "Bu aralıkta hiçbir istek ölçülmedi. Daha geniş bir pencere deneyin."
++      }
++    },
++    "usage": {
++      "title": "Kullanım",
++      "subtitle": "Kiro ve AI rotasını kimler, ne kadar kullanıyor",
++      "grafana": "Grafana'da aç",
++      "range": {
++        "aria": "Zaman aralığı",
++        "h1": "1 sa",
++        "h6": "6 sa",
++        "h24": "24 sa",
++        "d7": "7 g"
++      },
++      "kpi": {
++        "chats": "Kiro sohbetleri",
++        "aiCalls": "AI rotası çağrıları",
++        "users": "Etkin kullanıcılar",
++        "tokens": "AI jetonları",
++        "tokensNote": "jetonları yalnızca AI rotası bildirir"
++      },
++      "series": {
++        "kiro": "Kiro",
++        "aiRoute": "AI rotası",
++        "tokens": "Jetonlar"
++      },
++      "chats": {
++        "title": "Zaman içinde sohbetler",
++        "hint": "Aralık başına istekler, yola göre ayrılmış.",
++        "empty": "Bu aralıkta sohbet yok",
++        "emptyBody": "Henüz Kiro veya AI rotasından hiçbir şey geçmedi."
++      },
++      "users": {
++        "title": "Kimler kullanıyor",
++        "hint": "Kiro kimlikleri jeton karmalarıdır ve bir jeton yenilendiğinde değişir.",
++        "empty": "Bu aralıkta kullanıcı yok",
++        "noMatch": "Aramayla eşleşen kullanıcı yok",
++        "searchPlaceholder": "Kullanıcı ara…",
++        "searchAria": "Kullanıcı ara",
++        "shareAria": "{{user}} için toplamdaki pay",
++        "col": {
++          "user": "Kullanıcı",
++          "kiro": "Kiro sohbetleri",
++          "ai": "AI çağrıları",
++          "blocked": "Engellenen",
++          "total": "Toplam",
++          "share": "Pay"
++        }
++      },
++      "tokens": {
++        "title": "Tüketici ve modele göre AI jetonları",
++        "hint": "AI rotası tarafından bildirilen istem ve tamamlama jetonları.",
++        "empty": "Henüz jeton yok",
++        "emptyBody": "Jeton sayılarını yalnızca AI rotası bildirir; Kiro sohbetlerinde yoktur.",
++        "col": {
++          "consumer": "Tüketici",
++          "model": "Model",
++          "prompt": "İstem",
++          "completion": "Tamamlama",
++          "total": "Toplam"
++        }
++      },
++      "tokensChart": {
++        "title": "Zaman içinde jetonlar",
++        "hint": "Aralık başına toplam AI jetonu.",
++        "empty": "Henüz jeton yok",
++        "emptyBody": "Jeton sayılarını yalnızca AI rotası bildirir."
++      }
++    },
++    "traces": {
++      "title": "İzler",
++      "subtitle": "Tek bir isteği ağ geçidi boyunca takip edin",
++      "grafana": "Grafana'da aç",
++      "range": {
++        "aria": "Zaman aralığı",
++        "m15": "15 dk",
++        "h1": "1 sa",
++        "h6": "6 sa",
++        "h24": "24 sa"
++      },
++      "filter": {
++        "aria": "İz filtresi",
++        "chat": "Sohbet istekleri",
++        "all": "Tümü",
++        "slow": "Yavaş (>1 sn)",
++        "errors": "Hatalar"
++      },
++      "host": {
++        "kiroChat": "Kiro sohbeti",
++        "kiroApi": "Kiro API",
++        "kiroAccount": "Kiro hesabı",
++        "aiRoute": "AI rotası"
++      },
++      "list": {
++        "title": "Son istekler",
++        "hint": "Tam şelalesini görmek için bir isteğe tıklayın. Yavaş = 1 saniyeden fazla.",
++        "empty": "Bu aralıkta iz yok",
++        "emptyBody": "Bu filtre ve aralıkla eşleşen istek yok veya izler zaman aşımına uğradı."
++      },
++      "col": {
++        "time": "Zaman",
++        "request": "İstek",
++        "host": "Ana makine",
++        "status": "Durum",
++        "duration": "Süre"
++      },
++      "detail": {
++        "title": "İz ayrıntısı",
++        "total": "Toplam",
++        "host": "Ana makine",
++        "traceId": "İz kimliği",
++        "copyId": "İz kimliğini kopyala",
++        "openGrafana": "Grafana'da aç",
++        "waterfall": "Şelale",
++        "requestAttrs": "İstek öznitelikleri",
++        "work": "Ağ geçidi işi: {{gateway}} · Upstream beklemesi: {{upstream}}",
++        "workGatewayOnly": "Ağ geçidi işi: {{gateway}}",
++        "goneTitle": "Bu iz artık mevcut değil",
++        "goneBody": "İzler bir saklama süresinden sonra zaman aşımına uğrar. Daha yeni bir isteği açmayı deneyin."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index fda3033..2108241 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -794,6 +794,237 @@
+         "appliedTitle": "规则已应用",
+         "appliedBody": "已保存为提交 {{commit}}。"
+       }
++    },
++    "traffic": {
++      "title": "流量",
++      "subtitle": "有多少请求通过、网关如何响应，以及传输了多少数据。",
++      "range": {
++        "aria": "时间范围",
++        "h1": "1小时",
++        "h6": "6小时",
++        "h24": "24小时",
++        "d7": "7天",
++        "grafana": "在 Grafana 中打开"
++      },
++      "unit": {
++        "rpm": "次/分钟"
++      },
++      "kpi": {
++        "requests": "时间窗内的请求数",
++        "requestsNote": "网关在此时间范围内处理的请求总数。",
++        "blocked": "被护栏拦截",
++        "blockedNote": "被护栏拦截的请求（403）。",
++        "limited": "被限流",
++        "limitedNote": "因发送过快而被拒绝（429）。",
++        "errors": "服务器错误（5xx）",
++        "errorsNote": "网关或上游故障。"
++      },
++      "byRoute": {
++        "title": "各路由每分钟请求数",
++        "hint": "每个请求发往哪个上游，逐分钟展示。"
++      },
++      "byCode": {
++        "title": "按状态码的响应",
++        "hint": "403 = 被护栏拦截；429 = 被限流；499 = 客户端先关闭了连接（无害）。"
++      },
++      "codes": {
++        "title": "状态码汇总",
++        "hint": "所有响应按 HTTP 状态码分组。",
++        "code": "状态码",
++        "meaning": "含义",
++        "requests": "请求数"
++      },
++      "codeMeaning": {
++        "ok": "成功",
++        "badRequest": "错误请求",
++        "unauth": "未登录",
++        "blocked": "被护栏拦截",
++        "notFound": "未找到",
++        "limited": "被限流",
++        "clientClosed": "客户端关闭了连接",
++        "serverError": "网关/上游错误"
++      },
++      "routes": {
++        "title": "路由",
++        "hint": "此时间窗内各路由的请求量。",
++        "name": "路由",
++        "id": "ID",
++        "requests": "请求数",
++        "share": "占比"
++      },
++      "bandwidth": {
++        "title": "带宽",
++        "hint": "每秒通过网关的字节数，入站和出站。",
++        "ingress": "入站",
++        "egress": "出站"
++      },
++      "empty": {
++        "title": "暂无流量",
++        "body": "此时间范围内没有请求通过网关。请尝试更大的时间窗。"
++      }
++    },
++    "latency": {
++      "title": "延迟",
++      "subtitle": "请求耗时多久——以及时间花在网关上还是在等待上游。",
++      "kpi": {
++        "chat": "Kiro 聊天（p50 / p95）",
++        "chatNote": "包含被即时拦截的请求，因此 p50 可能很小。概览页仅显示已完成的聊天。",
++        "gateway": "网关开销（p50 / p95）",
++        "gatewayNote": "APISIX 自身增加的时间：护栏、路由。",
++        "upstream": "上游（p95）",
++        "upstreamNote": "在 Kiro / AWS 后端花费的时间。"
++      },
++      "split": {
++        "title": "时间都去哪了",
++        "hint": "在 p95 下，总耗时在网关与上游之间如何分配。",
++        "gateway": "网关",
++        "upstream": "上游（Kiro / AWS）",
++        "explain": "在第 95 百分位，网关增加 {{gw}}，上游占用 {{up}}。慢请求的时间几乎总是在上游，而不是网关。"
++      },
++      "pctToggle": {
++        "aria": "百分位",
++        "p50": "p50",
++        "p95": "p95"
++      },
++      "byRoute": {
++        "title": "各路由延迟",
++        "hint": "用切换按钮选择 p50（典型）或 p95（慢尾）。"
++      },
++      "gwVsUp": {
++        "title": "网关对比上游（p95）",
++        "hint": "网关曲线应保持平稳且低；尖峰来自上游。"
++      },
++      "routes": {
++        "title": "路由",
++        "hint": "p95 超过 1 秒标黄，超过 5 秒标红。",
++        "name": "路由",
++        "id": "ID",
++        "p50": "p50",
++        "p95": "p95",
++        "requests": "请求数"
++      },
++      "empty": {
++        "title": "暂无延迟数据",
++        "body": "此时间范围内没有测量到任何请求。请尝试更大的时间窗。"
++      }
++    },
++    "usage": {
++      "title": "使用情况",
++      "subtitle": "谁在使用 Kiro 和 AI 路由，以及用量多少",
++      "grafana": "在 Grafana 中打开",
++      "range": {
++        "aria": "时间范围",
++        "h1": "1 小时",
++        "h6": "6 小时",
++        "h24": "24 小时",
++        "d7": "7 天"
++      },
++      "kpi": {
++        "chats": "Kiro 对话",
++        "aiCalls": "AI 路由调用",
++        "users": "活跃用户",
++        "tokens": "AI 令牌",
++        "tokensNote": "仅 AI 路由报告令牌数"
++      },
++      "series": {
++        "kiro": "Kiro",
++        "aiRoute": "AI 路由",
++        "tokens": "令牌"
++      },
++      "chats": {
++        "title": "对话随时间变化",
++        "hint": "每个时间段的请求数，按路径拆分。",
++        "empty": "此时间段内没有对话",
++        "emptyBody": "尚未有请求经过 Kiro 或 AI 路由。"
++      },
++      "users": {
++        "title": "谁在使用",
++        "hint": "Kiro 的 id 是令牌哈希，令牌刷新时会变化。",
++        "empty": "此时间段内没有用户",
++        "noMatch": "没有匹配搜索的用户",
++        "searchPlaceholder": "搜索用户…",
++        "searchAria": "搜索用户",
++        "shareAria": "{{user}} 占总量的比例",
++        "col": {
++          "user": "用户",
++          "kiro": "Kiro 对话",
++          "ai": "AI 调用",
++          "blocked": "被拦截",
++          "total": "总计",
++          "share": "占比"
++        }
++      },
++      "tokens": {
++        "title": "按消费者和模型划分的 AI 令牌",
++        "hint": "AI 路由报告的提示和补全令牌。",
++        "empty": "暂无令牌",
++        "emptyBody": "仅 AI 路由报告令牌数；Kiro 对话没有。",
++        "col": {
++          "consumer": "消费者",
++          "model": "模型",
++          "prompt": "提示",
++          "completion": "补全",
++          "total": "总计"
++        }
++      },
++      "tokensChart": {
++        "title": "令牌随时间变化",
++        "hint": "每个时间段的 AI 令牌总数。",
++        "empty": "暂无令牌",
++        "emptyBody": "仅 AI 路由报告令牌数。"
++      }
++    },
++    "traces": {
++      "title": "追踪",
++      "subtitle": "跟踪单个请求通过网关的全过程",
++      "grafana": "在 Grafana 中打开",
++      "range": {
++        "aria": "时间范围",
++        "m15": "15 分钟",
++        "h1": "1 小时",
++        "h6": "6 小时",
++        "h24": "24 小时"
++      },
++      "filter": {
++        "aria": "追踪筛选",
++        "chat": "聊天请求",
++        "all": "全部",
++        "slow": "慢 (>1 秒)",
++        "errors": "错误"
++      },
++      "host": {
++        "kiroChat": "Kiro 聊天",
++        "kiroApi": "Kiro API",
++        "kiroAccount": "Kiro 账户",
++        "aiRoute": "AI 路由"
++      },
++      "list": {
++        "title": "最近的请求",
++        "hint": "点击某个请求查看其完整瀑布图。慢 = 超过 1 秒。",
++        "empty": "此时间段内没有追踪",
++        "emptyBody": "没有请求匹配此筛选和范围，或追踪已过期。"
++      },
++      "col": {
++        "time": "时间",
++        "request": "请求",
++        "host": "主机",
++        "status": "状态",
++        "duration": "耗时"
++      },
++      "detail": {
++        "title": "追踪详情",
++        "total": "总计",
++        "host": "主机",
++        "traceId": "追踪 id",
++        "copyId": "复制追踪 id",
++        "openGrafana": "在 Grafana 中打开",
++        "waterfall": "瀑布图",
++        "requestAttrs": "请求属性",
++        "work": "网关处理：{{gateway}} · 等待上游：{{upstream}}",
++        "workGatewayOnly": "网关处理：{{gateway}}",
++        "goneTitle": "此追踪已不可用",
++        "goneBody": "追踪在保留期后会过期。请尝试打开更近期的请求。"
++      }
+     }
+   }
+ }
+diff --git a/src/routes/observability/latency.tsx b/src/routes/observability/latency.tsx
+index 660acd1..b5194ca 100644
+--- a/src/routes/observability/latency.tsx
++++ b/src/routes/observability/latency.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { LatencyPage } from '@/kiro/observability/latency/LatencyPage';
+ 
+ export const Route = createFileRoute('/observability/latency')({
+-  component: () => <ComingSoon page="latency" />,
++  component: LatencyPage,
+ });
+diff --git a/src/routes/observability/traces/index.tsx b/src/routes/observability/traces/index.tsx
+index 9d0d587..363d737 100644
+--- a/src/routes/observability/traces/index.tsx
++++ b/src/routes/observability/traces/index.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { TracesPage } from '@/kiro/observability/traces/TracesPage';
+ 
+ export const Route = createFileRoute('/observability/traces/')({
+-  component: () => <ComingSoon page="traces" />,
++  component: TracesPage,
+ });
+diff --git a/src/routes/observability/traffic.tsx b/src/routes/observability/traffic.tsx
+index e37af4e..7835697 100644
+--- a/src/routes/observability/traffic.tsx
++++ b/src/routes/observability/traffic.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { TrafficPage } from '@/kiro/observability/traffic/TrafficPage';
+ 
+ export const Route = createFileRoute('/observability/traffic')({
+-  component: () => <ComingSoon page="traffic" />,
++  component: TrafficPage,
+ });
+diff --git a/src/routes/observability/usage.tsx b/src/routes/observability/usage.tsx
+index 572c9bf..c803a5c 100644
+--- a/src/routes/observability/usage.tsx
++++ b/src/routes/observability/usage.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { UsagePage } from '@/kiro/observability/usage/UsagePage';
+ 
+ export const Route = createFileRoute('/observability/usage')({
+-  component: () => <ComingSoon page="usage" />,
++  component: UsagePage,
+ });

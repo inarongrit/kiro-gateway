@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Sat, 3 Oct 2026 00:03:42 +0000
+Subject: [PATCH] kiro: Gateway (antd) tables scroll inside the table on phones
+
+---
+ src/kiro/portal.css | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/kiro/portal.css b/src/kiro/portal.css
+index b9a8a6a..a25d3dd 100644
+--- a/src/kiro/portal.css
++++ b/src/kiro/portal.css
+@@ -80,3 +80,8 @@ body {
+     animation: none !important;
+   }
+ }
++
++/* Upstream Gateway (antd) tables are wider than a phone: scroll inside the table, not the page. */
++.ant-table-content {
++  overflow-x: auto;
++}

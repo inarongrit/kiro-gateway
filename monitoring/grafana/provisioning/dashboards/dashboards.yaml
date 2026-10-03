@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: kiro-gateway
+    folder: Kiro Gateway
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false        # dashboards are code: edit monitoring/grafana/build_dashboards.py
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

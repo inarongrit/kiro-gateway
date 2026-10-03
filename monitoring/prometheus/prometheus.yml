@@ -1,0 +1,15 @@
+# Prometheus for the Kiro gateway PoC. All targets are on the internal Docker network.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: apisix
+    metrics_path: /apisix/prometheus/metrics
+    static_configs:
+      - targets: ["apisix:9091"]
+        labels: { stack: kiro-gateway }
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

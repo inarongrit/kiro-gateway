@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Route Kiro through the PoC gateway (Squid -> APISIX) by setting ONLY proxy + CA env vars.
+# Nothing system-wide is changed: no /etc/hosts, no system trust store, no Kiro settings.
+#
+#   source scripts/kiro-via-gateway on       # this shell: route via gateway
+#   source scripts/kiro-via-gateway off      # this shell: back to direct (restores prior values)
+#   scripts/kiro-via-gateway run <cmd...>    # one command via gateway, shell untouched
+#   scripts/kiro-via-gateway status          # show current state + gateway health
+#
+# on/off must be SOURCED (a child process cannot change the parent shell's environment).
+
+_kgw_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_kgw_proxy="${KIRO_GATEWAY_PROXY:-http://127.0.0.1:3128}"
+_kgw_bundle="$_kgw_dir/pki/trust-bundle.pem"
+_kgw_vars=(HTTPS_PROXY https_proxy HTTP_PROXY http_proxy NO_PROXY no_proxy SSL_CERT_FILE AWS_CA_BUNDLE)
+
+_kgw_sourced() { [[ "${BASH_SOURCE[0]}" != "$0" ]]; }
+
+_kgw_bundle_build() {
+  # System CAs + PoC test CA, so tunneled (non-intercepted) hosts still verify normally.
+  local sys=/etc/ssl/certs/ca-certificates.crt
+  [[ -f "$_kgw_dir/pki/ca.crt" ]] || { echo "kiro-gateway: missing pki/ca.crt (run scripts/make-ca.sh)" >&2; return 1; }
+  if [[ ! -f "$_kgw_bundle" || "$_kgw_dir/pki/ca.crt" -nt "$_kgw_bundle" || "$sys" -nt "$_kgw_bundle" ]]; then
+    cat "$sys" "$_kgw_dir/pki/ca.crt" > "$_kgw_bundle"
+  fi
+}
+
+_kgw_health() {
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -x "$_kgw_proxy" https://aws.amazon.com/ 2>/dev/null)
+  [[ "$code" =~ ^[23] ]]
+}
+
+_kgw_env() {  # print the env assignments for "on"
+  echo "HTTPS_PROXY=$_kgw_proxy" "https_proxy=$_kgw_proxy" "HTTP_PROXY=$_kgw_proxy" "http_proxy=$_kgw_proxy" \
+       "NO_PROXY=localhost,127.0.0.1,::1" "no_proxy=localhost,127.0.0.1,::1" \
+       "SSL_CERT_FILE=$_kgw_bundle" "AWS_CA_BUNDLE=$_kgw_bundle"
+}
+
+case "${1:-status}" in
+  on)
+    _kgw_sourced || { echo "use: source $0 on" >&2; exit 2; }
+    _kgw_bundle_build || return 1
+    _kgw_health || { echo "kiro-gateway: proxy $_kgw_proxy not healthy -- not switching (fail-safe)" >&2; return 1; }
+    if [[ -z "${_KGW_SAVED:-}" ]]; then        # save prior values once, for an exact restore
+      _KGW_SAVED=1
+      for v in "${_kgw_vars[@]}"; do
+        if [[ -n "${!v+x}" ]]; then eval "_KGW_PREV_$v=\${$v}"; else eval "unset _KGW_PREV_$v"; fi
+      done
+    fi
+    for kv in $(_kgw_env); do export "$kv"; done
+    echo "kiro-gateway: ON  (proxy $_kgw_proxy, CA bundle pki/trust-bundle.pem). New kiro-cli sessions in this shell use the gateway."
+    ;;
+  off)
+    _kgw_sourced || { echo "use: source $0 off" >&2; exit 2; }
+    for v in "${_kgw_vars[@]}"; do
+      p="_KGW_PREV_$v"
+      if [[ -n "${_KGW_SAVED:-}" && -n "${!p+x}" ]]; then export "$v=${!p}"; else unset "$v"; fi
+      unset "$p"
+    done
+    unset _KGW_SAVED p
+    echo "kiro-gateway: OFF (direct). Restart running kiro-cli sessions to pick this up."
+    ;;
+  run)
+    _kgw_sourced && { echo "kiro-gateway: do not source 'run'; execute it: $0 run <cmd>" >&2; return 2; }
+    shift; [[ $# -gt 0 ]] || { echo "usage: $0 run <command...>" >&2; exit 2; }
+    _kgw_bundle_build || exit 1
+    _kgw_health || { echo "kiro-gateway: proxy $_kgw_proxy not healthy" >&2; exit 1; }
+    # shellcheck disable=SC2046
+    exec env $(_kgw_env) "$@"
+    ;;
+  status)
+    if [[ "${HTTPS_PROXY:-}" == "$_kgw_proxy" && "${SSL_CERT_FILE:-}" == "$_kgw_bundle" ]]; then
+      echo "kiro-gateway: this shell is ON"; else echo "kiro-gateway: this shell is OFF (direct)"; fi
+    if _kgw_health; then echo "gateway proxy $_kgw_proxy: healthy"; else echo "gateway proxy $_kgw_proxy: DOWN"; fi
+    ;;
+  *)
+    echo "usage: source $0 on|off   |   $0 run <cmd...>   |   $0 status" >&2
+    _kgw_sourced && return 2 || exit 2
+    ;;
+esac

@@ -1,0 +1,13 @@
+{
+  "trace_id_source": "random",
+  "resource": { "service.name": "kiro-gateway", "deployment.environment": "poc" },
+  "collector": { "address": "otel-collector:4318", "request_timeout": 3 },
+  "batch_span_processor": {
+    "drop_on_queue_full": true,
+    "max_queue_size": 2048,
+    "batch_timeout": 2,
+    "inactive_timeout": 1,
+    "max_export_batch_size": 64
+  },
+  "set_ngx_var": true
+}

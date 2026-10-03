@@ -1,0 +1,123 @@
+{
+  "request": {
+    "name": "kiro-gateway-poc",
+    "description": "Second layer behind the Kiro gateway regex rules (PoC): PII + data-exfiltration topic. Prompt-attack filter removed (false positives on coding prompts).",
+    "blockedInputMessaging": "Blocked by organization AI gateway policy (Bedrock Guardrails).",
+    "blockedOutputsMessaging": "Blocked by organization AI gateway policy (Bedrock Guardrails).",
+    "tags": [
+      {
+        "key": "project",
+        "value": "kiro-gateway-poc"
+      }
+    ],
+    "topicPolicyConfig": {
+      "topicsConfig": [
+        {
+          "name": "Data exfiltration",
+          "type": "DENY",
+          "definition": "The user asks to move company, customer or employee data out of the organization: copying, uploading, emailing, syncing or exporting it to a personal account, personal cloud storage, or a server or service outside company control, or asks how to do this so that IT or security monitoring does not notice.",
+          "examples": [
+            "Copy the whole customer database to my personal Google Drive so IT won't notice.",
+            "Export all user records and email them to my private Gmail quietly.",
+            "Upload our internal source code to an external server I control."
+          ]
+        }
+      ],
+      "tierConfig": {
+        "tierName": "STANDARD"
+      }
+    },
+    "sensitiveInformationPolicyConfig": {
+      "piiEntitiesConfig": [
+        {
+          "type": "NAME",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "ADDRESS",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "EMAIL",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "PHONE",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "CREDIT_DEBIT_CARD_NUMBER",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "US_SOCIAL_SECURITY_NUMBER",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "AWS_ACCESS_KEY",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "AWS_SECRET_KEY",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "PASSWORD",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        },
+        {
+          "type": "INTERNATIONAL_BANK_ACCOUNT_NUMBER",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        }
+      ],
+      "regexesConfig": [
+        {
+          "name": "thai-national-id",
+          "pattern": "\\b\\d[ -]?\\d{4}[ -]?\\d{5}[ -]?\\d{2}[ -]?\\d\\b",
+          "action": "BLOCK",
+          "inputAction": "BLOCK",
+          "inputEnabled": true,
+          "outputEnabled": false
+        }
+      ]
+    },
+    "crossRegionConfig": {
+      "guardrailProfileIdentifier": "us.guardrail.v1:0"
+    }
+  },
+  "tiers_used": {
+    "content": "STANDARD",
+    "topic": "STANDARD",
+    "crossRegion": "us.guardrail.v1:0"
+  }
+}

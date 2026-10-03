@@ -1,0 +1,4677 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 14:30:39 +0000
+Subject: [PATCH] kiro: AI Guardrails pages (overview, rules editor, activity,
+ prompt tester)
+
+---
+ package.json                                  |   2 +-
+ pnpm-lock.yaml                                | 155 ++++++---
+ .../guardrails/activity/ActivityDrawer.tsx    | 158 +++++++++
+ src/kiro/guardrails/activity/ActivityPage.tsx | 253 +++++++++++++++
+ src/kiro/guardrails/activity/userText.ts      |  40 +++
+ src/kiro/guardrails/overview/KpiCard.tsx      |  64 ++++
+ src/kiro/guardrails/overview/LiveActivity.tsx |  98 ++++++
+ src/kiro/guardrails/overview/OverviewPage.tsx | 303 +++++++++++++++++
+ src/kiro/guardrails/overview/RankedBars.tsx   |  53 +++
+ src/kiro/guardrails/overview/SummaryHero.tsx  |  83 +++++
+ src/kiro/guardrails/overview/data.ts          |  95 ++++++
+ src/kiro/guardrails/rules/HistoryCard.tsx     |  60 ++++
+ src/kiro/guardrails/rules/ProtectionsCard.tsx | 139 ++++++++
+ src/kiro/guardrails/rules/ReviewModal.tsx     | 191 +++++++++++
+ src/kiro/guardrails/rules/RuleDrawer.tsx      | 304 ++++++++++++++++++
+ src/kiro/guardrails/rules/RulesPage.tsx       | 280 ++++++++++++++++
+ src/kiro/guardrails/rules/RulesTable.tsx      | 144 +++++++++
+ src/kiro/guardrails/rules/draft.ts            | 126 ++++++++
+ src/kiro/guardrails/tester/TesterPage.tsx     | 270 ++++++++++++++++
+ src/locales/de/common.json                    | 277 ++++++++++++++++
+ src/locales/en/common.json                    | 277 ++++++++++++++++
+ src/locales/es/common.json                    | 277 ++++++++++++++++
+ src/locales/tr/common.json                    | 277 ++++++++++++++++
+ src/locales/zh/common.json                    | 277 ++++++++++++++++
+ src/routes/guardrails/activity.tsx            |   4 +-
+ src/routes/guardrails/rules/index.tsx         |   4 +-
+ src/routes/guardrails/tester.tsx              |   4 +-
+ src/routes/overview.tsx                       |   4 +-
+ 28 files changed, 4159 insertions(+), 60 deletions(-)
+ create mode 100644 src/kiro/guardrails/activity/ActivityDrawer.tsx
+ create mode 100644 src/kiro/guardrails/activity/ActivityPage.tsx
+ create mode 100644 src/kiro/guardrails/activity/userText.ts
+ create mode 100644 src/kiro/guardrails/overview/KpiCard.tsx
+ create mode 100644 src/kiro/guardrails/overview/LiveActivity.tsx
+ create mode 100644 src/kiro/guardrails/overview/OverviewPage.tsx
+ create mode 100644 src/kiro/guardrails/overview/RankedBars.tsx
+ create mode 100644 src/kiro/guardrails/overview/SummaryHero.tsx
+ create mode 100644 src/kiro/guardrails/overview/data.ts
+ create mode 100644 src/kiro/guardrails/rules/HistoryCard.tsx
+ create mode 100644 src/kiro/guardrails/rules/ProtectionsCard.tsx
+ create mode 100644 src/kiro/guardrails/rules/ReviewModal.tsx
+ create mode 100644 src/kiro/guardrails/rules/RuleDrawer.tsx
+ create mode 100644 src/kiro/guardrails/rules/RulesPage.tsx
+ create mode 100644 src/kiro/guardrails/rules/RulesTable.tsx
+ create mode 100644 src/kiro/guardrails/rules/draft.ts
+ create mode 100644 src/kiro/guardrails/tester/TesterPage.tsx
+
+diff --git a/package.json b/package.json
+index ba2fe48..efc621c 100644
+--- a/package.json
++++ b/package.json
+@@ -46,7 +46,7 @@
+     "react-hook-form": "7.56.1",
+     "react-i18next": "^15.4.1",
+     "react-use": "^17.6.0",
+-    "recharts": "2.15.4",
++    "recharts": "3.10.1",
+     "znv": "^0.5.0",
+     "zod": "^3.24.3",
+     "zod-empty": "^1.4.4"
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 83d54e0..5c43995 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -44,7 +44,7 @@ importers:
+         version: 5.0.1(react-hook-form@7.56.1(react@19.1.0))
+       '@mantine/charts':
+         specifier: 8.3.18
+-        version: 8.3.18(@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(@mantine/hooks@8.3.18(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(recharts@2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0))
++        version: 8.3.18(@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(@mantine/hooks@8.3.18(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(recharts@3.10.1(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react-is@18.3.1)(react@19.1.0)(redux@5.0.1))
+       '@mantine/core':
+         specifier: ^8.3.18
+         version: 8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+@@ -121,8 +121,8 @@ importers:
+         specifier: ^17.6.0
+         version: 17.6.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+       recharts:
+-        specifier: 2.15.4
+-        version: 2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++        specifier: 3.10.1
++        version: 3.10.1(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react-is@18.3.1)(react@19.1.0)(redux@5.0.1)
+       znv:
+         specifier: ^0.5.0
+         version: 0.5.0(zod@3.25.76)
+@@ -1132,6 +1132,17 @@ packages:
+       react: '>=16.9.0'
+       react-dom: '>=16.9.0'
+ 
++  '@reduxjs/toolkit@2.13.0':
++    resolution: {integrity: sha512-f6jwVRfwW30+tnllz4YcsHHpPYYOE7abcHkyUCovD+P7DyhdAI5prz2Fh/8TLhakjpN+7aIEion1s5L/tvlYlA==}
++    peerDependencies:
++      react: ^16.9.0 || ^17.0.0 || ^18 || ^19
++      react-redux: ^7.2.1 || ^8.1.3 || ^9.0.0
++    peerDependenciesMeta:
++      react:
++        optional: true
++      react-redux:
++        optional: true
++
+   '@rolldown/pluginutils@1.0.0-beta.27':
+     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
+ 
+@@ -1600,6 +1611,9 @@ packages:
+   '@types/react@19.2.14':
+     resolution: {integrity: sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w==}
+ 
++  '@types/use-sync-external-store@0.0.6':
++    resolution: {integrity: sha512-zFDAD+tlpf2r4asuHEj0XH6pY6i0g5NeAHPn+15wk3BV6JA69eERFXC1gyGThDkVa1zCyKr5jox1+2LbV/AMLg==}
++
+   '@typescript-eslint/eslint-plugin@8.57.2':
+     resolution: {integrity: sha512-NZZgp0Fm2IkD+La5PR81sd+g+8oS6JwJje+aRWsDocxHkjyRw0J5L5ZTlN3LI1LlOcGL7ph3eaIUmTXMIjLk0w==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+@@ -2263,6 +2277,9 @@ packages:
+     resolution: {integrity: sha512-w+5mJ3GuFL+NjVtJlvydShqE1eN3h3PbI7/5LAsYJP/2qtuMXjfL2LpHSRqo4b4eSF5K/DH1JXKUAHSB2UW50g==}
+     engines: {node: '>= 0.4'}
+ 
++  es-toolkit@1.52.0:
++    resolution: {integrity: sha512-XTNEJQh1tY1ZJVcf6ayP/2n4ZPyaHlW2FWs7xvw5ddPuhUVjLD3olQVQS7kf58JbAB48iL0uL/jerTrjtV3lDA==}
++
+   esbuild@0.25.12:
+     resolution: {integrity: sha512-bbPBYYrtZbkt6Os6FiTLCTFxvq4tt3JKall1vRwshA3fdVztsLAatFaZobhkBC8/BrPetoa0oksYoKXoG4ryJg==}
+     engines: {node: '>=18'}
+@@ -2438,9 +2455,6 @@ packages:
+     resolution: {integrity: sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==}
+     engines: {node: '>=0.10.0'}
+ 
+-  eventemitter3@4.0.7:
+-    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+-
+   eventemitter3@5.0.4:
+     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+ 
+@@ -2462,10 +2476,6 @@ packages:
+   fast-deep-equal@3.1.3:
+     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
+ 
+-  fast-equals@5.4.3:
+-    resolution: {integrity: sha512-8unmvA0qrfpFWBYUate9BTGtQdKHWBYt+KdAIkag7Vvxe7wz8Q2nJg7fLMC0bJqe0bjP31kca7Ckaawrs4Istg==}
+-    engines: {node: '>=6.0.0'}
+-
+   fast-json-stable-stringify@2.1.0:
+     resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
+ 
+@@ -2688,6 +2698,9 @@ packages:
+   immer@10.2.0:
+     resolution: {integrity: sha512-d/+XTN3zfODyjr89gM3mPq1WNX2B8pYsu7eORitdwyA2sBubnTl3laYlBk4sXY5FUa5qTZGBDPJICVbvqzjlbw==}
+ 
++  immer@11.1.18:
++    resolution: {integrity: sha512-EQyQtLiYW029lyoczMl/Hh4Xu7cDecSc58JRYpHyL4tIAu3eqd1yJzQX04d2BZHDkzFFvm6qJEJWOtfDSWAXbQ==}
++
+   import-fresh@3.3.1:
+     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
+     engines: {node: '>=6'}
+@@ -3563,6 +3576,18 @@ packages:
+       react: ^0.14 || ^15.0.0 || ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+       react-dom: ^0.14 || ^15.0.0 || ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+ 
++  react-redux@9.3.0:
++    resolution: {integrity: sha512-KQopgqFo/p/fgmAs5qz6p5RWaNAzq40WAu7fJIXnQpYxFPbJYtsJPWvGeF2rOBaY/kEuV77AVsX8TsQzKm+A/g==}
++    peerDependencies:
++      '@types/react': ^18.2.25 || ^19
++      react: ^18.0 || ^19
++      redux: ^5.0.0
++    peerDependenciesMeta:
++      '@types/react':
++        optional: true
++      redux:
++        optional: true
++
+   react-remove-scroll-bar@2.3.8:
+     resolution: {integrity: sha512-9r+yi9+mgU33AKcj6IbT9oRCO78WriSj6t/cF8DWBZJ9aOGPOTEDvdUDz1FwKim7QXWwmHqtdHnRJfhAxEG46Q==}
+     engines: {node: '>=10'}
+@@ -3583,12 +3608,6 @@ packages:
+       '@types/react':
+         optional: true
+ 
+-  react-smooth@4.0.4:
+-    resolution: {integrity: sha512-gnGKTpYwqL0Iii09gHobNolvX4Kiq4PKx6eWBCYYix+8cdw+cGo3do906l1NBPKkSWx1DghC1dlWG9L2uGd61Q==}
+-    peerDependencies:
+-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+-
+   react-style-singleton@2.2.3:
+     resolution: {integrity: sha512-b6jSvxvVnyptAiLjbkWLE/lOnR4lfTtDAl+eUC7RZy+QQWc6wRzIV2CE6xBuMmDxc2qIihtDCZD5NPOFl7fRBQ==}
+     engines: {node: '>=10'}
+@@ -3640,16 +3659,21 @@ packages:
+     resolution: {integrity: sha512-YTUo+Flmw4ZXiWfQKGcwwc11KnoRAYgzAE2E7mXKCjSviTKShtxBsN6YUUBB2gtaBzKzeKunxhUwNHQuRryhWA==}
+     engines: {node: '>= 4'}
+ 
+-  recharts-scale@0.4.5:
+-    resolution: {integrity: sha512-kivNFO+0OcUNu7jQquLXAxz1FIwZj8nrj+YkOKc5694NbjCvcT6aSZiIzNzd2Kul4o4rTto8QVR9lMNtxD4G1w==}
+-
+-  recharts@2.15.4:
+-    resolution: {integrity: sha512-UT/q6fwS3c1dHbXv2uFgYJ9BMFHu3fwnd7AYZaEQhXuYQ4hgsxLvsUXzGdKeZrW5xopzDCvuA2N41WJ88I7zIw==}
+-    engines: {node: '>=14'}
+-    deprecated: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
++  recharts@3.10.1:
++    resolution: {integrity: sha512-QXFrvt6IVcw7eeZCoyXTwkIJAX3Dv1nyVhMicXJ47GsGDDpcN8z6o644DibE9XjpBTThtsomLKnTV6lc+cVFUA==}
++    engines: {node: '>=18'}
+     peerDependencies:
+-      react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+       react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++      react-is: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++
++  redux-thunk@3.1.0:
++    resolution: {integrity: sha512-NW2r5T6ksUKXCabzhL9z+h206HQw/NJkcLm1GPImRQ8IzfXwRGqjVhKJGauHirT0DAuyy6hjdnMZaRoAcy0Klw==}
++    peerDependencies:
++      redux: ^5.0.0
++
++  redux@5.0.1:
++    resolution: {integrity: sha512-M9/ELqF6fy8FwmkpnF0S3YKOqMyoWJ4+CS5Efg2ct3oY9daQvd/Pc71FpGZsVsbl3Cpb+IIcjBDUnnyBdQbq4w==}
+ 
+   reflect-metadata@0.2.2:
+     resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
+@@ -3666,6 +3690,9 @@ packages:
+     resolution: {integrity: sha512-LBnkqsDE7BZKvqylbmn7lTIVdpx4K/QCduRATpO5R+wtPmky/a8pN1bO2D6wXppn1497AJF9mNjqAXr6bdl9jg==}
+     engines: {node: '>=0.10.5'}
+ 
++  reselect@5.2.0:
++    resolution: {integrity: sha512-AgZ3UOZm3YndfrJ4OYjgrT7bmCm/1iqkjvEfH/oYjzh6PD2qw4QuT3jjnXIrpdt4MTpMXclMT3lXbmRY+XRakw==}
++
+   resize-observer-polyfill@1.5.1:
+     resolution: {integrity: sha512-LwZrotdHOo12nQuZlHEmtuXdqGoOD0OhaxopaNFxWzInpEgaLWoVuAMbTzixuosCx2nEG58ngzW3vxdWoxIgdg==}
+ 
+@@ -4177,8 +4204,8 @@ packages:
+   util-deprecate@1.0.2:
+     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
+ 
+-  victory-vendor@36.9.2:
+-    resolution: {integrity: sha512-PnpQQMuxlwYdocC8fIJqVXvkeViHYzotI+NJrCuav0ZYFoq912ZHBk3mCeuj+5/VpodOjPe1z0Fk2ihgzlXqjQ==}
++  victory-vendor@37.3.6:
++    resolution: {integrity: sha512-SbPDPdDBYp+5MJHhBCAyI7wKM3d5ivekigc2Dk2s7pgbZ9wIgIBYGVw4zGHBml/qTFbexrofXW6Gu4noGxrOwQ==}
+ 
+   vite-tsconfig-paths@5.1.4:
+     resolution: {integrity: sha512-cYj0LRuLV2c2sMqhqhGpaO3LretdtMn/BVX4cPLanIZuwwrkVl+lK84E/miEXkCHWXuq65rhNN4rXsBcOB3S4w==}
+@@ -5085,13 +5112,13 @@ snapshots:
+       lodash: 4.18.1
+       minimatch: 10.2.4
+ 
+-  '@mantine/charts@8.3.18(@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(@mantine/hooks@8.3.18(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(recharts@2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0))':
++  '@mantine/charts@8.3.18(@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(@mantine/hooks@8.3.18(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(recharts@3.10.1(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react-is@18.3.1)(react@19.1.0)(redux@5.0.1))':
+     dependencies:
+       '@mantine/core': 8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+       '@mantine/hooks': 8.3.18(react@19.1.0)
+       react: 19.1.0
+       react-dom: 19.1.0(react@19.1.0)
+-      recharts: 2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++      recharts: 3.10.1(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react-is@18.3.1)(react@19.1.0)(redux@5.0.1)
+ 
+   '@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+     dependencies:
+@@ -5312,6 +5339,18 @@ snapshots:
+       react: 19.1.0
+       react-dom: 19.1.0(react@19.1.0)
+ 
++  '@reduxjs/toolkit@2.13.0(react-redux@9.3.0(@types/react@19.2.14)(react@19.1.0)(redux@5.0.1))(react@19.1.0)':
++    dependencies:
++      '@standard-schema/spec': 1.1.0
++      '@standard-schema/utils': 0.3.0
++      immer: 11.1.18
++      redux: 5.0.1
++      redux-thunk: 3.1.0(redux@5.0.1)
++      reselect: 5.2.0
++    optionalDependencies:
++      react: 19.1.0
++      react-redux: 9.3.0(@types/react@19.2.14)(react@19.1.0)(redux@5.0.1)
++
+   '@rolldown/pluginutils@1.0.0-beta.27': {}
+ 
+   '@rollup/rollup-android-arm-eabi@4.59.0':
+@@ -5696,6 +5735,8 @@ snapshots:
+     dependencies:
+       csstype: 3.2.3
+ 
++  '@types/use-sync-external-store@0.0.6': {}
++
+   '@typescript-eslint/eslint-plugin@8.57.2(@typescript-eslint/parser@8.57.2(eslint@9.39.4(jiti@2.6.1))(typescript@5.8.3))(eslint@9.39.4(jiti@2.6.1))(typescript@5.8.3)':
+     dependencies:
+       '@eslint-community/regexpp': 4.12.2
+@@ -6490,6 +6531,8 @@ snapshots:
+       is-date-object: 1.1.0
+       is-symbol: 1.1.1
+ 
++  es-toolkit@1.52.0: {}
++
+   esbuild@0.25.12:
+     optionalDependencies:
+       '@esbuild/aix-ppc64': 0.25.12
+@@ -6752,8 +6795,6 @@ snapshots:
+ 
+   esutils@2.0.3: {}
+ 
+-  eventemitter3@4.0.7: {}
+-
+   eventemitter3@5.0.4: {}
+ 
+   execa@8.0.1:
+@@ -6776,8 +6817,6 @@ snapshots:
+ 
+   fast-deep-equal@3.1.3: {}
+ 
+-  fast-equals@5.4.3: {}
+-
+   fast-json-stable-stringify@2.1.0: {}
+ 
+   fast-levenshtein@2.0.6: {}
+@@ -6972,6 +7011,8 @@ snapshots:
+ 
+   immer@10.2.0: {}
+ 
++  immer@11.1.18: {}
++
+   import-fresh@3.3.1:
+     dependencies:
+       parent-module: 1.0.1
+@@ -7925,6 +7966,15 @@ snapshots:
+       react: 19.1.0
+       react-dom: 19.1.0(react@19.1.0)
+ 
++  react-redux@9.3.0(@types/react@19.2.14)(react@19.1.0)(redux@5.0.1):
++    dependencies:
++      '@types/use-sync-external-store': 0.0.6
++      react: 19.1.0
++      use-sync-external-store: 1.6.0(react@19.1.0)
++    optionalDependencies:
++      '@types/react': 19.2.14
++      redux: 5.0.1
++
+   react-remove-scroll-bar@2.3.8(@types/react@19.2.14)(react@19.1.0):
+     dependencies:
+       react: 19.1.0
+@@ -7944,14 +7994,6 @@ snapshots:
+     optionalDependencies:
+       '@types/react': 19.2.14
+ 
+-  react-smooth@4.0.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
+-    dependencies:
+-      fast-equals: 5.4.3
+-      prop-types: 15.8.1
+-      react: 19.1.0
+-      react-dom: 19.1.0(react@19.1.0)
+-      react-transition-group: 4.4.5(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+-
+   react-style-singleton@2.2.3(@types/react@19.2.14)(react@19.1.0):
+     dependencies:
+       get-nonce: 1.0.1
+@@ -8021,22 +8063,31 @@ snapshots:
+       tiny-invariant: 1.3.3
+       tslib: 2.8.1
+ 
+-  recharts-scale@0.4.5:
+-    dependencies:
+-      decimal.js-light: 2.5.1
+-
+-  recharts@2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
++  recharts@3.10.1(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react-is@18.3.1)(react@19.1.0)(redux@5.0.1):
+     dependencies:
++      '@reduxjs/toolkit': 2.13.0(react-redux@9.3.0(@types/react@19.2.14)(react@19.1.0)(redux@5.0.1))(react@19.1.0)
+       clsx: 2.1.1
+-      eventemitter3: 4.0.7
+-      lodash: 4.18.1
++      decimal.js-light: 2.5.1
++      es-toolkit: 1.52.0
++      eventemitter3: 5.0.4
++      immer: 11.1.18
+       react: 19.1.0
+       react-dom: 19.1.0(react@19.1.0)
+       react-is: 18.3.1
+-      react-smooth: 4.0.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+-      recharts-scale: 0.4.5
++      react-redux: 9.3.0(@types/react@19.2.14)(react@19.1.0)(redux@5.0.1)
++      reselect: 5.2.0
+       tiny-invariant: 1.3.3
+-      victory-vendor: 36.9.2
++      use-sync-external-store: 1.6.0(react@19.1.0)
++      victory-vendor: 37.3.6
++    transitivePeerDependencies:
++      - '@types/react'
++      - redux
++
++  redux-thunk@3.1.0(redux@5.0.1):
++    dependencies:
++      redux: 5.0.1
++
++  redux@5.0.1: {}
+ 
+   reflect-metadata@0.2.2: {}
+ 
+@@ -8062,6 +8113,8 @@ snapshots:
+ 
+   requireindex@1.1.0: {}
+ 
++  reselect@5.2.0: {}
++
+   resize-observer-polyfill@1.5.1: {}
+ 
+   resolve-from@4.0.0: {}
+@@ -8612,7 +8665,7 @@ snapshots:
+ 
+   util-deprecate@1.0.2: {}
+ 
+-  victory-vendor@36.9.2:
++  victory-vendor@37.3.6:
+     dependencies:
+       '@types/d3-array': 3.2.2
+       '@types/d3-ease': 3.0.2
+diff --git a/src/kiro/guardrails/activity/ActivityDrawer.tsx b/src/kiro/guardrails/activity/ActivityDrawer.tsx
+new file mode 100644
+index 0000000..3b978e7
+--- /dev/null
++++ b/src/kiro/guardrails/activity/ActivityDrawer.tsx
+@@ -0,0 +1,158 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { Button, Collapse, Divider, Drawer, Group, ScrollArea, SimpleGrid, Stack, Text } from '@mantine/core';
++import { useDisclosure } from '@mantine/hooks';
++import { useNavigate } from '@tanstack/react-router';
++import type { FC, ReactNode } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import IconChevron from '~icons/tabler/chevron-right';
++import IconFlask from '~icons/tabler/flask';
++
++import type { AuditEvent } from '../api';
++import { fmtMs, fmtNumber, fmtTime, useRuleLabel } from '../format';
++import { PathBadge, ResultBadge } from '../ui';
++import { hasPreamble, preambleText, userText } from './userText';
++
++export const TESTER_PREFILL_KEY = 'kiro:tester-prefill';
++
++const Field: FC<{ label: string; children: ReactNode }> = ({ label, children }) => (
++  <Stack gap={2}>
++    <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
++      {label}
++    </Text>
++    <Text size="sm" style={{ wordBreak: 'break-word' }}>
++      {children}
++    </Text>
++  </Stack>
++);
++
++export const ActivityDrawer: FC<{ event: AuditEvent | null; onClose: () => void }> = ({ event, onClose }) => {
++  const { t, i18n } = useTranslation();
++  const ruleLabel = useRuleLabel();
++  const navigate = useNavigate();
++  const [ctxOpen, ctx] = useDisclosure(false);
++
++  const isKiro = event?.path === 'kiro';
++  const message = event ? userText(event.prompt) : '';
++  const preamble = event ? preambleText(event.prompt) : '';
++
++  const onTest = () => {
++    if (!event) return;
++    try {
++      sessionStorage.setItem(TESTER_PREFILL_KEY, message);
++    } catch {
++      /* storage may be unavailable; the tester still opens empty */
++    }
++    navigate({ to: '/guardrails/tester' });
++  };
++
++  return (
++    <Drawer
++      opened={!!event}
++      onClose={onClose}
++      position="right"
++      size="lg"
++      title={<Text fw={600}>{t('kiro.activity.drawer.title')}</Text>}
++      scrollAreaComponent={ScrollArea.Autosize}
++    >
++      {event && (
++        <Stack gap="md">
++          <Group gap="sm">
++            <ResultBadge result={event.result} />
++            <PathBadge path={event.path} />
++          </Group>
++
++          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" verticalSpacing="md">
++            <Field label={t('kiro.activity.col.time')}>{fmtTime(event.ts, i18n.language)}</Field>
++            <Field label={t('kiro.activity.col.rule')}>{ruleLabel(event.rule) || '–'}</Field>
++            <Field label={t('kiro.activity.col.user')}>
++              <Text span ff="monospace" size="sm">
++                {event.user}
++              </Text>
++            </Field>
++            <Field label={t('kiro.activity.drawer.host')}>{event.host || '–'}</Field>
++            <Field label={t('kiro.activity.drawer.op')}>{event.op || '–'}</Field>
++            <Field label={t('kiro.activity.drawer.status')}>{event.status || '–'}</Field>
++            <Field label={t('kiro.activity.drawer.model')}>{event.model || '–'}</Field>
++            <Field label={t('kiro.activity.drawer.tokens')}>{fmtNumber(event.tokens, i18n.language)}</Field>
++            <Field label={t('kiro.activity.col.latency')}>{fmtMs(event.latency_ms)}</Field>
++          </SimpleGrid>
++
++          <Divider />
++
++          <Stack gap={6}>
++            <Group justify="space-between" align="center">
++              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
++                {t('kiro.activity.drawer.message')}
++              </Text>
++              {isKiro && message && (
++                <Button
++                  size="compact-xs"
++                  variant="light"
++                  leftSection={<IconFlask width={14} height={14} />}
++                  onClick={onTest}
++                >
++                  {t('kiro.activity.drawer.testPrompt')}
++                </Button>
++              )}
++            </Group>
++            {isKiro ? (
++              <ScrollArea.Autosize mah={320} type="auto">
++                <Text size="sm" ff="monospace" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
++                  {message || t('kiro.activity.drawer.emptyMessage')}
++                </Text>
++              </ScrollArea.Autosize>
++            ) : (
++              <Text size="sm" c="dimmed" fs="italic">
++                {t('kiro.activity.notStored')}
++              </Text>
++            )}
++          </Stack>
++
++          {isKiro && event.prompt && hasPreamble(event.prompt) && (
++            <Stack gap={6}>
++              <Button
++                variant="subtle"
++                size="compact-sm"
++                justify="flex-start"
++                color="gray"
++                onClick={ctx.toggle}
++                leftSection={
++                  <IconChevron
++                    width={14}
++                    height={14}
++                    style={{ transform: ctxOpen ? 'rotate(90deg)' : 'none', transition: 'transform 150ms' }}
++                  />
++                }
++              >
++                {t('kiro.activity.drawer.contextToggle')}
++              </Button>
++              <Collapse in={ctxOpen}>
++                <ScrollArea.Autosize mah={320} type="auto">
++                  <Text size="xs" ff="monospace" c="dimmed" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
++                    {preamble || t('kiro.activity.drawer.emptyContext')}
++                  </Text>
++                </ScrollArea.Autosize>
++              </Collapse>
++            </Stack>
++          )}
++        </Stack>
++      )}
++    </Drawer>
++  );
++};
+diff --git a/src/kiro/guardrails/activity/ActivityPage.tsx b/src/kiro/guardrails/activity/ActivityPage.tsx
+new file mode 100644
+index 0000000..2f532bf
+--- /dev/null
++++ b/src/kiro/guardrails/activity/ActivityPage.tsx
+@@ -0,0 +1,253 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import {
++  Box,
++  Button,
++  Card,
++  Center,
++  Checkbox,
++  Group,
++  SegmentedControl,
++  Select,
++  Table,
++  Text,
++  TextInput,
++  Tooltip,
++  UnstyledButton,
++} from '@mantine/core';
++import { useDebouncedValue } from '@mantine/hooks';
++import { useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { PortalPageHeader } from '@/kiro/shell/Page';
++import IconPause from '~icons/tabler/player-pause';
++import IconPlay from '~icons/tabler/player-play';
++import IconSearch from '~icons/tabler/search';
++
++import type { AuditEvent, EventResult, GuardPath } from '../api';
++import { useEvents } from '../api';
++import { fmtMs, fmtTime, useRuleLabel, useTimeAgo } from '../format';
++import { EmptyState, ErrorState, LoadingState, PathBadge, ResultBadge } from '../ui';
++import { ActivityDrawer } from './ActivityDrawer';
++import { userText } from './userText';
++
++const DEFAULT_LIMIT = 200;
++const EXPANDED_LIMIT = 1000;
++
++const HOURS_BY_WINDOW: Record<string, number> = { '1h': 1, '24h': 24, '7d': 168, '30d': 720 };
++
++export const ActivityPage = () => {
++  const { t, i18n } = useTranslation();
++  const ruleLabel = useRuleLabel();
++  const timeAgo = useTimeAgo();
++
++  const [search, setSearch] = useState('');
++  const [debouncedSearch] = useDebouncedValue(search, 300);
++  const [result, setResult] = useState<'' | EventResult>('');
++  const [path, setPath] = useState<'' | GuardPath>('');
++  const [window, setWindow] = useState('24h');
++  const [allOps, setAllOps] = useState(false);
++  const [live, setLive] = useState(true);
++  const [limit, setLimit] = useState(DEFAULT_LIMIT);
++  const [selected, setSelected] = useState<AuditEvent | null>(null);
++
++  const { data, isLoading, isError, error } = useEvents(
++    {
++      q: debouncedSearch || undefined,
++      result: result || undefined,
++      path: path || undefined,
++      hours: HOURS_BY_WINDOW[window],
++      all_ops: allOps || undefined,
++      limit,
++    },
++    live,
++  );
++
++  const events = data ?? [];
++  const canShowMore = limit === DEFAULT_LIMIT && events.length >= DEFAULT_LIMIT;
++
++  const resultOptions = [
++    { value: '', label: t('kiro.activity.filter.resultAll') },
++    { value: 'allowed', label: t('kiro.guard.result.allowed') },
++    { value: 'blocked', label: t('kiro.guard.result.blocked') },
++    { value: 'rate_limited', label: t('kiro.guard.result.rate_limited') },
++    { value: 'error', label: t('kiro.guard.result.error') },
++  ];
++
++  const header = (
++    <PortalPageHeader
++      title={t('kiro.activity.title')}
++      subtitle={t('kiro.activity.subtitle')}
++      actions={
++        <Button
++          onClick={() => setLive((v) => !v)}
++          size="xs"
++          radius="sm"
++          variant={live ? 'filled' : 'light'}
++          color={live ? 'teal' : 'gray'}
++          leftSection={live ? <IconPause width={14} height={14} /> : <IconPlay width={14} height={14} />}
++          aria-label={live ? t('kiro.activity.live.pause') : t('kiro.activity.live.resume')}
++        >
++          {live ? t('kiro.activity.live.on') : t('kiro.activity.live.paused')}
++        </Button>
++      }
++    />
++  );
++
++  const filterBar = (
++    <Group gap="sm" mb="md" align="flex-end" wrap="wrap">
++      <TextInput
++        label={t('kiro.activity.filter.search')}
++        placeholder={t('kiro.activity.filter.searchPlaceholder')}
++        value={search}
++        onChange={(e) => setSearch(e.currentTarget.value)}
++        leftSection={<IconSearch width={16} height={16} />}
++        w={240}
++      />
++      <Box>
++        <Text size="sm" fw={500} mb={4}>
++          {t('kiro.activity.filter.result')}
++        </Text>
++        <SegmentedControl
++          size="xs"
++          value={result}
++          onChange={(v) => setResult(v as '' | EventResult)}
++          data={resultOptions}
++        />
++      </Box>
++      <Select
++        label={t('kiro.activity.filter.path')}
++        value={path}
++        onChange={(v) => setPath((v ?? '') as '' | GuardPath)}
++        w={160}
++        allowDeselect={false}
++        data={[
++          { value: '', label: t('kiro.activity.filter.pathAll') },
++          { value: 'kiro', label: t('kiro.guard.path.kiro') },
++          { value: 'ai', label: t('kiro.guard.path.ai') },
++        ]}
++      />
++      <Select
++        label={t('kiro.activity.filter.window')}
++        value={window}
++        onChange={(v) => setWindow(v ?? '24h')}
++        w={140}
++        allowDeselect={false}
++        data={[
++          { value: '1h', label: t('kiro.activity.filter.window1h') },
++          { value: '24h', label: t('kiro.activity.filter.window24h') },
++          { value: '7d', label: t('kiro.activity.filter.window7d') },
++          { value: '30d', label: t('kiro.activity.filter.window30d') },
++        ]}
++      />
++      <Checkbox
++        label={t('kiro.activity.filter.allOps')}
++        checked={allOps}
++        onChange={(e) => setAllOps(e.currentTarget.checked)}
++        mb={6}
++      />
++    </Group>
++  );
++
++  const body = () => {
++    if (isLoading && !data) return <LoadingState />;
++    if (isError) return <ErrorState error={error} />;
++    if (!events.length)
++      return <EmptyState title={t('kiro.activity.empty.title')} body={t('kiro.activity.empty.body')} />;
++
++    return (
++      <Table.ScrollContainer minWidth={960}>
++        <Table striped highlightOnHover stickyHeader>
++          <Table.Thead>
++            <Table.Tr>
++              <Table.Th>{t('kiro.activity.col.time')}</Table.Th>
++              <Table.Th>{t('kiro.activity.col.result')}</Table.Th>
++              <Table.Th>{t('kiro.activity.col.rule')}</Table.Th>
++              <Table.Th>{t('kiro.activity.col.path')}</Table.Th>
++              <Table.Th>{t('kiro.activity.col.user')}</Table.Th>
++              <Table.Th>{t('kiro.activity.col.prompt')}</Table.Th>
++              <Table.Th>{t('kiro.activity.col.latency')}</Table.Th>
++            </Table.Tr>
++          </Table.Thead>
++          <Table.Tbody>
++            {events.map((ev, i) => (
++              <Table.Tr
++                key={`${ev.ts}-${ev.user}-${i}`}
++                onClick={() => setSelected(ev)}
++                style={{ cursor: 'pointer' }}
++              >
++                <Table.Td>
++                  <Tooltip label={fmtTime(ev.ts, i18n.language)} withArrow>
++                    <Text size="sm">{timeAgo(ev.ts)}</Text>
++                  </Tooltip>
++                </Table.Td>
++                <Table.Td>
++                  <ResultBadge result={ev.result} />
++                </Table.Td>
++                <Table.Td>
++                  <Text size="sm">{ruleLabel(ev.rule) || '–'}</Text>
++                </Table.Td>
++                <Table.Td>
++                  <PathBadge path={ev.path} />
++                </Table.Td>
++                <Table.Td>
++                  <Text size="sm" ff="monospace">
++                    {ev.user}
++                  </Text>
++                </Table.Td>
++                <Table.Td style={{ maxWidth: 360 }}>
++                  {ev.path === 'ai' ? (
++                    <Text size="sm" c="dimmed" fs="italic" truncate>
++                      {t('kiro.activity.notStored')}
++                    </Text>
++                  ) : (
++                    <Text size="sm" truncate>
++                      {userText(ev.prompt).replace(/\s+/g, ' ').trim() || '–'}
++                    </Text>
++                  )}
++                </Table.Td>
++                <Table.Td>
++                  <Text size="sm">{fmtMs(ev.latency_ms)}</Text>
++                </Table.Td>
++              </Table.Tr>
++            ))}
++          </Table.Tbody>
++        </Table>
++      </Table.ScrollContainer>
++    );
++  };
++
++  return (
++    <Box maw={1440}>
++      {header}
++      <Card withBorder>
++        {filterBar}
++        {body()}
++        {canShowMore && (
++          <Center mt="md">
++            <UnstyledButton onClick={() => setLimit(EXPANDED_LIMIT)}>
++              <Text size="sm" c="blue" fw={500}>
++                {t('kiro.activity.showMore')}
++              </Text>
++            </UnstyledButton>
++          </Center>
++        )}
++      </Card>
++      <ActivityDrawer event={selected} onClose={() => setSelected(null)} />
++    </Box>
++  );
++};
+diff --git a/src/kiro/guardrails/activity/userText.ts b/src/kiro/guardrails/activity/userText.ts
+new file mode 100644
+index 0000000..59524c1
+--- /dev/null
++++ b/src/kiro/guardrails/activity/userText.ts
+@@ -0,0 +1,40 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Kiro wraps the user's text in injected context blocks; show just the user's words. */
++
++const USER_MSG = /--- USER MESSAGE BEGIN ---\s*([\s\S]*?)\s*(--- USER MESSAGE END ---|$)/;
++
++/** The user's own message, with the hidden gateway preamble stripped (mirrors console/web/static/app.js). */
++export const userText = (s: string): string => {
++  const m = USER_MSG.exec(s ?? '');
++  return m && m[1] ? m[1] : (s ?? '');
++};
++
++/** True when the prompt carries a hidden Kiro context preamble around the user message. */
++export const hasPreamble = (s: string): boolean => {
++  const extracted = userText(s);
++  return extracted !== (s ?? '') && extracted.length < (s ?? '').length;
++};
++
++/** The hidden context preamble (everything that is not the extracted user message). */
++export const preambleText = (s: string): string => {
++  const extracted = userText(s);
++  if (extracted === (s ?? '')) return '';
++  const idx = (s ?? '').indexOf(extracted);
++  if (idx < 0) return s ?? '';
++  return ((s ?? '').slice(0, idx) + (s ?? '').slice(idx + extracted.length)).trim();
++};
+diff --git a/src/kiro/guardrails/overview/KpiCard.tsx b/src/kiro/guardrails/overview/KpiCard.tsx
+new file mode 100644
+index 0000000..582e7f9
+--- /dev/null
++++ b/src/kiro/guardrails/overview/KpiCard.tsx
+@@ -0,0 +1,64 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** A single KPI card: label, big number, optional note and sparkline. */
++import { Sparkline } from '@mantine/charts';
++import { Box, Card, Group, Skeleton, Stack, Text } from '@mantine/core';
++import type { FC, ReactNode } from 'react';
++
++export const KpiCard: FC<{
++  label: string;
++  value: ReactNode;
++  note?: ReactNode;
++  spark?: number[];
++  color?: string;
++  loading?: boolean;
++}> = ({ label, value, note, spark, color = 'indigo.4', loading }) => (
++  <Card withBorder h="100%">
++    <Stack gap={6} h="100%" justify="space-between">
++      <Text size="sm" c="dimmed">
++        {label}
++      </Text>
++      <Group justify="space-between" align="flex-end" wrap="nowrap" gap="sm">
++        <Box>
++          {loading ? (
++            <Skeleton height={32} width={88} radius="sm" />
++          ) : (
++            <Text fw={650} fz={30} lh={1.1} style={{ fontVariantNumeric: 'tabular-nums' }}>
++              {value}
++            </Text>
++          )}
++          {note && (
++            <Text size="xs" c="dimmed" mt={2}>
++              {note}
++            </Text>
++          )}
++        </Box>
++        {spark && spark.some((n) => n > 0) && (
++          <Sparkline
++            w={76}
++            h={34}
++            data={spark}
++            color={color}
++            fillOpacity={0.18}
++            strokeWidth={1.6}
++            curveType="monotone"
++          />
++        )}
++      </Group>
++    </Stack>
++  </Card>
++);
+diff --git a/src/kiro/guardrails/overview/LiveActivity.tsx b/src/kiro/guardrails/overview/LiveActivity.tsx
+new file mode 100644
+index 0000000..a07d1d8
+--- /dev/null
++++ b/src/kiro/guardrails/overview/LiveActivity.tsx
+@@ -0,0 +1,98 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Latest guardrail events as a compact feed, with a link to the full activity page. */
++import { Anchor, Badge, Group, Skeleton, Stack, Text } from '@mantine/core';
++import { Link } from '@tanstack/react-router';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { useEvents } from '../api';
++import { useRuleLabel, useTimeAgo } from '../format';
++import { EmptyState, ErrorState, ResultBadge, SectionCard } from '../ui';
++import type { RangeHours } from './data';
++
++/** Kiro wraps the user's words in context blocks; show just the user message. */
++const userText = (s: string): string => {
++  const m = /--- USER MESSAGE BEGIN ---\s*([\s\S]*?)\s*(--- USER MESSAGE END ---|$)/.exec(s);
++  return (m && m[1] ? m[1] : s).trim();
++};
++
++export const LiveActivity: FC<{ hours: RangeHours }> = ({ hours }) => {
++  const { t } = useTranslation();
++  const ruleLabel = useRuleLabel();
++  const timeAgo = useTimeAgo();
++  const { data: events, isPending, error } = useEvents({ hours, limit: 8 });
++
++  const action = (
++    <Anchor component={Link} to="/guardrails/activity" size="sm">
++      {t('kiro.overview.activity.viewAll')}
++    </Anchor>
++  );
++
++  return (
++    <SectionCard
++      title={
++        <Group gap="xs">
++          {t('kiro.overview.activity.title')}
++          <Badge color="teal" variant="dot" size="sm">
++            {t('kiro.overview.activity.live')}
++          </Badge>
++        </Group>
++      }
++      action={action}
++    >
++      {isPending ? (
++        <Stack gap="sm">
++          {Array.from({ length: 5 }).map((_, i) => (
++            <Skeleton key={i} height={20} radius="sm" />
++          ))}
++        </Stack>
++      ) : error ? (
++        <ErrorState error={error} />
++      ) : events.length === 0 ? (
++        <EmptyState title={t('kiro.overview.activity.empty')} />
++      ) : (
++        <Stack gap={0}>
++          {events.map((e, i) => (
++            <Group
++              key={`${e.ts}-${i}`}
++              gap="sm"
++              wrap="nowrap"
++              align="center"
++              py={9}
++              style={i > 0 ? { borderTop: '1px solid var(--mantine-color-default-border)' } : undefined}
++            >
++              <Text size="xs" c="dimmed" w={104} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
++                {timeAgo(e.ts)}
++              </Text>
++              <ResultBadge result={e.result} />
++              <Text size="sm" truncate flex={1}>
++                {userText(e.prompt) || t('kiro.overview.activity.noPrompt')}
++              </Text>
++              <Text size="xs" c="dimmed" style={{ flex: 'none' }}>
++                {ruleLabel(e.rule) ? `${ruleLabel(e.rule)} · ` : ''}
++                <Text span ff="monospace">
++                  {e.user}
++                </Text>
++              </Text>
++            </Group>
++          ))}
++        </Stack>
++      )}
++    </SectionCard>
++  );
++};
+diff --git a/src/kiro/guardrails/overview/OverviewPage.tsx b/src/kiro/guardrails/overview/OverviewPage.tsx
+new file mode 100644
+index 0000000..b7dd6ac
+--- /dev/null
++++ b/src/kiro/guardrails/overview/OverviewPage.tsx
+@@ -0,0 +1,303 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** The AI Guardrails "Overview" page: a bento command center over the stats API. */
++import { AreaChart } from '@mantine/charts';
++import {
++  Anchor,
++  Box,
++  Grid,
++  Group,
++  SegmentedControl,
++  SimpleGrid,
++  Skeleton,
++  Stack,
++  Text,
++} from '@mantine/core';
++import { Link } from '@tanstack/react-router';
++import { useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { PortalPageHeader } from '@/kiro/shell/Page';
++
++import { useHistory, useStats } from '../api';
++import { fmtMs, fmtNumber, useRuleLabel, useTimeAgo } from '../format';
++import { EmptyState, ErrorState, SectionCard } from '../ui';
++import { axisLabel, buildSeries, type RangeHours, sparkFrom } from './data';
++import { KpiCard } from './KpiCard';
++import { LiveActivity } from './LiveActivity';
++import { RankedBars } from './RankedBars';
++import { SummaryHero } from './SummaryHero';
++
++export const OverviewPage = () => {
++  const { t, i18n } = useTranslation();
++  const [hours, setHours] = useState<RangeHours>(24);
++  const ruleLabel = useRuleLabel();
++  const timeAgo = useTimeAgo();
++
++  const stats = useStats(hours);
++  const history = useHistory();
++
++  const s = stats.data;
++  const daily = hours === 168;
++  const series = useMemo(() => (s ? buildSeries(s.timeline, hours) : []), [s, hours]);
++
++  const chartData = useMemo(
++    () => series.map((p) => ({ ...p, date: axisLabel(p.date, daily, i18n.language) })),
++    [series, daily, i18n.language]
++  );
++  const windowHasTraffic = series.some((p) => p.allowed + p.blocked + p.rate_limited > 0);
++
++  const rangeControl = (
++    <SegmentedControl
++      size="sm"
++      value={String(hours)}
++      onChange={(v) => setHours(Number(v) as RangeHours)}
++      aria-label={t('kiro.overview.range.aria')}
++      data={[
++        { value: '1', label: t('kiro.overview.range.h1') },
++        { value: '24', label: t('kiro.overview.range.h24') },
++        { value: '168', label: t('kiro.overview.range.d7') },
++      ]}
++    />
++  );
++
++  const num = (n: number | null | undefined) => fmtNumber(n, i18n.language);
++  const blockedPct = s && s.requests > 0 ? Math.round((s.blocked / s.requests) * 100) : 0;
++  const kiro = s?.latency_ms.kiro;
++  const ai = s?.latency_ms.ai;
++
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader
++        title={t('kiro.overview.title')}
++        subtitle={t('kiro.overview.subtitle')}
++        actions={rangeControl}
++      />
++
++      {stats.error ? (
++        <SectionCard title={t('kiro.overview.title')}>
++          <ErrorState error={stats.error} />
++        </SectionCard>
++      ) : (
++        <Stack gap="md">
++          <SummaryHero stats={s} loading={stats.isPending} />
++
++          <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">
++            <KpiCard
++              label={t('kiro.overview.kpi.requests')}
++              value={num(s?.requests)}
++              spark={sparkFrom(series, 'allowed')}
++              color="indigo.4"
++              loading={stats.isPending}
++            />
++            <KpiCard
++              label={t('kiro.overview.kpi.blocked')}
++              value={num(s?.blocked)}
++              note={t('kiro.overview.kpi.blockedPct', { pct: blockedPct })}
++              spark={sparkFrom(series, 'blocked')}
++              color="red.5"
++              loading={stats.isPending}
++            />
++            <KpiCard
++              label={t('kiro.overview.kpi.users')}
++              value={num(s?.users)}
++              color="teal.5"
++              loading={stats.isPending}
++            />
++            <KpiCard
++              label={t('kiro.overview.kpi.latency')}
++              value={kiro ? fmtMs(kiro.p50) : '–'}
++              note={`${t('kiro.overview.latency.p95')} ${kiro ? fmtMs(kiro.p95) : '–'} · ${t('kiro.overview.kpi.latencyNote')}`}
++              color="cyan.5"
++              loading={stats.isPending}
++            />
++            <KpiCard
++              label={t('kiro.overview.kpi.protections')}
++              value={s ? `${num(s.protections_on)}/${num(s.protections_total)}` : '–'}
++              note={s ? t('kiro.overview.kpi.rulesEnabled', { count: s.rules_enabled }) : undefined}
++              color="violet.5"
++              loading={stats.isPending}
++            />
++          </SimpleGrid>
++
++          <Grid gutter="md">
++            <Grid.Col span={{ base: 12, lg: 8 }}>
++              <SectionCard
++                title={t('kiro.overview.chart.title')}
++                hint={t(daily ? 'kiro.overview.chart.hintDaily' : 'kiro.overview.chart.hintHourly')}
++              >
++                {stats.isPending ? (
++                  <Skeleton height={240} radius="sm" />
++                ) : !windowHasTraffic ? (
++                  <EmptyState title={t('kiro.overview.chart.empty')} body={t('kiro.overview.chart.emptyBody')} />
++                ) : (
++                  <AreaChart
++                    h={240}
++                    data={chartData}
++                    dataKey="date"
++                    type="stacked"
++                    withLegend
++                    curveType="monotone"
++                    valueFormatter={(v) => num(v)}
++                    series={[
++                      { name: 'allowed', label: t('kiro.guard.result.allowed'), color: 'teal.5' },
++                      { name: 'blocked', label: t('kiro.guard.result.blocked'), color: 'red.5' },
++                      { name: 'rate_limited', label: t('kiro.guard.result.rate_limited'), color: 'yellow.5' },
++                    ]}
++                  />
++                )}
++              </SectionCard>
++            </Grid.Col>
++
++            <Grid.Col span={{ base: 12, lg: 4 }}>
++              <SectionCard
++                title={t('kiro.overview.byRule.title')}
++                action={
++                  <Anchor component={Link} to="/guardrails/rules" size="sm">
++                    {t('kiro.overview.byRule.allRules')}
++                  </Anchor>
++                }
++                h="100%"
++              >
++                {stats.isPending ? (
++                  <Skeleton height={160} radius="sm" />
++                ) : !s || s.by_rule.length === 0 ? (
++                  <EmptyState title={t('kiro.overview.byRule.empty')} />
++                ) : (
++                  <RankedBars
++                    color="red"
++                    rows={s.by_rule.slice(0, 6).map(([id, n]) => ({
++                      key: id,
++                      label: ruleLabel(id) || id,
++                      value: n,
++                    }))}
++                    valueFmt={num}
++                  />
++                )}
++              </SectionCard>
++            </Grid.Col>
++
++            <Grid.Col span={{ base: 12, lg: 7 }}>
++              <LiveActivity hours={hours} />
++            </Grid.Col>
++
++            <Grid.Col span={{ base: 12, lg: 5 }}>
++              <SectionCard title={t('kiro.overview.byUser.title')} hint={t('kiro.overview.byUser.hint')} h="100%">
++                {stats.isPending ? (
++                  <Skeleton height={160} radius="sm" />
++                ) : !s || s.blocked_by_user.length === 0 ? (
++                  <EmptyState title={t('kiro.overview.byUser.empty')} />
++                ) : (
++                  <RankedBars
++                    color="red"
++                    rows={s.blocked_by_user.slice(0, 6).map(([user, n]) => ({
++                      key: user,
++                      label: (
++                        <Text span ff="monospace" size="sm">
++                          {user}
++                        </Text>
++                      ),
++                      value: n,
++                    }))}
++                    valueFmt={num}
++                  />
++                )}
++              </SectionCard>
++            </Grid.Col>
++
++            <Grid.Col span={{ base: 12, lg: 6 }}>
++              <SectionCard title={t('kiro.overview.latency.title')} hint={t('kiro.overview.latency.hint')} h="100%">
++                {stats.isPending ? (
++                  <Skeleton height={120} radius="sm" />
++                ) : (
++                  <SimpleGrid cols={2} spacing="lg">
++                    {(
++                      [
++                        ['kiro', kiro],
++                        ['ai', ai],
++                      ] as const
++                    ).map(([key, l]) => (
++                      <Stack key={key} gap={4}>
++                        <Text size="sm" fw={600}>
++                          {t(`kiro.guard.path.${key}`)}
++                        </Text>
++                        <Group gap="xl">
++                          <Box>
++                            <Text size="xs" c="dimmed">
++                              {t('kiro.overview.latency.p50')}
++                            </Text>
++                            <Text fw={650} fz="lg" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                              {fmtMs(l?.p50)}
++                            </Text>
++                          </Box>
++                          <Box>
++                            <Text size="xs" c="dimmed">
++                              {t('kiro.overview.latency.p95')}
++                            </Text>
++                            <Text fw={650} fz="lg" style={{ fontVariantNumeric: 'tabular-nums' }}>
++                              {fmtMs(l?.p95)}
++                            </Text>
++                          </Box>
++                        </Group>
++                        <Text size="xs" c="dimmed">
++                          {t('kiro.overview.latency.samples', { count: l?.n ?? 0 })}
++                        </Text>
++                      </Stack>
++                    ))}
++                  </SimpleGrid>
++                )}
++              </SectionCard>
++            </Grid.Col>
++
++            <Grid.Col span={{ base: 12, lg: 6 }}>
++              <SectionCard
++                title={t('kiro.overview.changes.title')}
++                action={
++                  <Anchor component={Link} to="/guardrails/rules" size="sm">
++                    {t('kiro.overview.changes.manage')}
++                  </Anchor>
++                }
++                h="100%"
++              >
++                {history.isPending ? (
++                  <Skeleton height={120} radius="sm" />
++                ) : history.error ? (
++                  <ErrorState error={history.error} />
++                ) : !history.data || history.data.length === 0 ? (
++                  <EmptyState title={t('kiro.overview.changes.empty')} />
++                ) : (
++                  <Stack gap="sm">
++                    {history.data.slice(0, 5).map((c) => (
++                      <Group key={c.commit} gap="sm" wrap="nowrap" align="flex-start">
++                        <Box flex={1}>
++                          <Text size="sm">{c.summary}</Text>
++                          <Text size="xs" c="dimmed">
++                            {c.author} · {timeAgo(c.time)}
++                          </Text>
++                        </Box>
++                      </Group>
++                    ))}
++                  </Stack>
++                )}
++              </SectionCard>
++            </Grid.Col>
++          </Grid>
++        </Stack>
++      )}
++    </Box>
++  );
++};
+diff --git a/src/kiro/guardrails/overview/RankedBars.tsx b/src/kiro/guardrails/overview/RankedBars.tsx
+new file mode 100644
+index 0000000..78fdd1a
+--- /dev/null
++++ b/src/kiro/guardrails/overview/RankedBars.tsx
+@@ -0,0 +1,53 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Horizontal ranked bars: label, proportional track and count. */
++import { Box, Group, Progress, Stack, Text } from '@mantine/core';
++import type { FC, ReactNode } from 'react';
++
++export type RankRow = { key: string; label: ReactNode; value: number };
++
++export const RankedBars: FC<{ rows: RankRow[]; color?: string; valueFmt?: (n: number) => string }> = ({
++  rows,
++  color = 'red',
++  valueFmt = (n) => String(n),
++}) => {
++  const max = Math.max(1, ...rows.map((r) => r.value));
++  return (
++    <Stack gap="sm">
++      {rows.map((r) => (
++        <Group key={r.key} gap="sm" wrap="nowrap" align="center">
++          <Box w={150} style={{ overflow: 'hidden' }}>
++            <Text size="sm" truncate>
++              {r.label}
++            </Text>
++          </Box>
++          <Progress
++            flex={1}
++            value={Math.max(3, (r.value / max) * 100)}
++            color={color}
++            size="sm"
++            radius="xl"
++            aria-hidden
++          />
++          <Text size="sm" fw={600} w={40} ta="right" style={{ fontVariantNumeric: 'tabular-nums' }}>
++            {valueFmt(r.value)}
++          </Text>
++        </Group>
++      ))}
++    </Stack>
++  );
++};
+diff --git a/src/kiro/guardrails/overview/SummaryHero.tsx b/src/kiro/guardrails/overview/SummaryHero.tsx
+new file mode 100644
+index 0000000..4e2413d
+--- /dev/null
++++ b/src/kiro/guardrails/overview/SummaryHero.tsx
+@@ -0,0 +1,83 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** The prominent "N of M prompts passed every guardrail" summary with a status ring. */
++import { Card, Group, RingProgress, Skeleton, Stack, Text } from '@mantine/core';
++import type { FC } from 'react';
++import { Trans, useTranslation } from 'react-i18next';
++
++import type { Stats } from '../api';
++import { fmtNumber } from '../format';
++import { passedCount } from './data';
++
++export const SummaryHero: FC<{ stats?: Stats; loading?: boolean }> = ({ stats, loading }) => {
++  const { t, i18n } = useTranslation();
++
++  if (loading || !stats) {
++    return (
++      <Card withBorder>
++        <Group justify="space-between" wrap="nowrap">
++          <Stack gap={8} flex={1}>
++            <Skeleton height={28} width="60%" radius="sm" />
++            <Skeleton height={14} width="40%" radius="sm" />
++          </Stack>
++          <Skeleton circle height={92} />
++        </Group>
++      </Card>
++    );
++  }
++
++  const passed = passedCount(stats);
++  const pct = stats.requests > 0 ? (passed / stats.requests) * 100 : 100;
++  const ringColor = pct >= 95 ? 'teal' : pct >= 80 ? 'yellow' : 'red';
++
++  return (
++    <Card withBorder>
++      <Group justify="space-between" align="center" wrap="nowrap" gap="xl">
++        <Stack gap={6}>
++          <Text fz={24} fw={650} lh={1.2} style={{ fontVariantNumeric: 'tabular-nums' }}>
++            <Trans
++              i18nKey="kiro.overview.summary.line"
++              t={t}
++              values={{ passed: fmtNumber(passed, i18n.language), total: fmtNumber(stats.requests, i18n.language) }}
++              components={{ b: <Text span inherit c="teal" /> }}
++            />
++          </Text>
++          <Group gap="lg">
++            <Text size="sm" c="dimmed">
++              {t('kiro.overview.summary.blocked', { count: stats.blocked })}
++            </Text>
++            <Text size="sm" c="dimmed">
++              {t('kiro.overview.summary.rateLimited', { count: stats.rate_limited })}
++            </Text>
++          </Group>
++        </Stack>
++        <RingProgress
++          size={92}
++          thickness={9}
++          roundCaps
++          sections={[{ value: pct, color: ringColor }]}
++          label={
++            <Text ta="center" fw={700} fz="sm" style={{ fontVariantNumeric: 'tabular-nums' }}>
++              {pct.toFixed(pct >= 99.95 ? 0 : 1)}%
++            </Text>
++          }
++          aria-label={t('kiro.overview.summary.ringAria', { pct: pct.toFixed(1) })}
++        />
++      </Group>
++    </Card>
++  );
++};
+diff --git a/src/kiro/guardrails/overview/data.ts b/src/kiro/guardrails/overview/data.ts
+new file mode 100644
+index 0000000..bbe0a0f
+--- /dev/null
++++ b/src/kiro/guardrails/overview/data.ts
+@@ -0,0 +1,95 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Pure data helpers for the Overview page: time ranges and timeline bucketing. */
++import type { Stats } from '../api';
++
++export type RangeHours = 1 | 24 | 168;
++
++/** The three selectable windows, in hours. */
++export const RANGE_HOURS: RangeHours[] = [1, 24, 168];
++
++/** One point on the allowed/blocked/rate-limited chart. */
++export type SeriesPoint = {
++  date: string;
++  allowed: number;
++  blocked: number;
++  rate_limited: number;
++};
++
++const HOUR_MS = 3_600_000;
++const DAY_MS = 86_400_000;
++
++/** Parse an API bucket ("2026-10-02T07:00", treated as local wall-clock) into epoch ms. */
++const bucketMs = (bucket: string): number => {
++  const d = new Date(bucket.length <= 16 ? `${bucket}:00` : bucket);
++  return d.getTime();
++};
++
++/** Floor an epoch to the start of its hour / day. */
++const floorTo = (ms: number, step: number) => Math.floor(ms / step) * step;
++
++/**
++ * Fold the raw timeline into evenly-spaced buckets across the selected window,
++ * filling gaps with zeros. Hourly for 1h/24h, daily for 7d.
++ */
++export const buildSeries = (
++  timeline: Stats['timeline'],
++  hours: RangeHours,
++  now: number = Date.now()
++): SeriesPoint[] => {
++  const daily = hours === 168;
++  const step = daily ? DAY_MS : HOUR_MS;
++  const count = daily ? 7 : hours;
++  const end = floorTo(now, step);
++  const start = end - (count - 1) * step;
++
++  const buckets = new Map<number, SeriesPoint>();
++  for (let i = 0; i < count; i++) {
++    const ts = start + i * step;
++    buckets.set(ts, {
++      date: new Date(ts).toISOString(),
++      allowed: 0,
++      blocked: 0,
++      rate_limited: 0,
++    });
++  }
++
++  for (const row of timeline) {
++    const key = floorTo(bucketMs(row.bucket), step);
++    const point = buckets.get(key);
++    if (!point) continue;
++    point.allowed += row.allowed ?? 0;
++    point.blocked += row.blocked ?? 0;
++    point.rate_limited += row.rate_limited ?? 0;
++  }
++
++  return [...buckets.values()];
++};
++
++/** Flat per-metric sparkline arrays derived from a series. */
++export const sparkFrom = (series: SeriesPoint[], key: keyof Omit<SeriesPoint, 'date'>): number[] =>
++  series.map((p) => p[key]);
++
++/** passed = requests - blocked - rate_limited, never negative. */
++export const passedCount = (s: Pick<Stats, 'requests' | 'blocked' | 'rate_limited'>): number =>
++  Math.max(0, s.requests - s.blocked - s.rate_limited);
++
++/** Local-time axis label for a bucket; hour-of-day for hourly, short date for daily. */
++export const axisLabel = (iso: string, daily: boolean, lang?: string): string =>
++  daily
++    ? new Intl.DateTimeFormat(lang, { month: 'short', day: 'numeric' }).format(new Date(iso))
++    : new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+diff --git a/src/kiro/guardrails/rules/HistoryCard.tsx b/src/kiro/guardrails/rules/HistoryCard.tsx
+new file mode 100644
+index 0000000..dfaf89f
+--- /dev/null
++++ b/src/kiro/guardrails/rules/HistoryCard.tsx
+@@ -0,0 +1,60 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Change history card: recent git commits of the rules file. */
++import { Code, Group, Skeleton, Stack, Text } from '@mantine/core';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { useHistory } from '../api';
++import { fmtTime, useTimeAgo } from '../format';
++import { EmptyState, ErrorState, SectionCard } from '../ui';
++
++export const HistoryCard: FC = () => {
++  const { t, i18n } = useTranslation();
++  const { data, isLoading, error } = useHistory();
++  const timeAgo = useTimeAgo();
++
++  return (
++    <SectionCard title={t('kiro.rules.history.title')} hint={t('kiro.rules.history.hint')}>
++      {isLoading ? (
++        <Stack gap="sm">
++          {[0, 1, 2].map((i) => (
++            <Skeleton key={i} h={44} radius="sm" />
++          ))}
++        </Stack>
++      ) : error ? (
++        <ErrorState error={error} />
++      ) : !data || data.length === 0 ? (
++        <EmptyState title={t('kiro.rules.history.emptyTitle')} body={t('kiro.rules.history.emptyBody')} />
++      ) : (
++        <Stack gap="sm">
++          {data.map((c) => (
++            <Group key={c.commit} gap="sm" wrap="nowrap" align="flex-start">
++              <Code>{c.commit}</Code>
++              <Stack gap={0} style={{ flex: 1 }}>
++                <Text size="sm">{c.summary.replace(/^guardrails:\s*/, '')}</Text>
++                <Text size="xs" c="dimmed" title={fmtTime(c.time, i18n.language)}>
++                  {timeAgo(c.time)} · {c.author}
++                </Text>
++              </Stack>
++            </Group>
++          ))}
++        </Stack>
++      )}
++    </SectionCard>
++  );
++};
+diff --git a/src/kiro/guardrails/rules/ProtectionsCard.tsx b/src/kiro/guardrails/rules/ProtectionsCard.tsx
+new file mode 100644
+index 0000000..62a07ce
+--- /dev/null
++++ b/src/kiro/guardrails/rules/ProtectionsCard.tsx
+@@ -0,0 +1,139 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Protections card: the four guardrail switches plus the block message. */
++import { Group, NumberInput, Stack, Switch, Text, Textarea } from '@mantine/core';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import type { GuardrailConfig, GuardrailSwitches } from '../api';
++import { SectionCard } from '../ui';
++
++const BLOCK_MESSAGE_MAX = 300;
++
++type Patch = (fn: (c: GuardrailConfig) => GuardrailConfig) => void;
++
++const Row: FC<{ title: string; help: string; children: React.ReactNode }> = ({ title, help, children }) => (
++  <Stack gap={6}>
++    <Group justify="space-between" align="flex-start" wrap="nowrap">
++      <Stack gap={0}>
++        <Text size="sm" fw={500}>
++          {title}
++        </Text>
++        <Text size="xs" c="dimmed">
++          {help}
++        </Text>
++      </Stack>
++      {children}
++    </Group>
++  </Stack>
++);
++
++export const ProtectionsCard: FC<{ draft: GuardrailConfig; patch: Patch }> = ({ draft, patch }) => {
++  const { t } = useTranslation();
++  const g = draft.guardrails;
++
++  const setSwitch = <K extends keyof GuardrailSwitches>(key: K, value: Partial<GuardrailSwitches[K]>) =>
++    patch((c) => ({ ...c, guardrails: { ...c.guardrails, [key]: { ...c.guardrails[key], ...value } } }));
++
++  return (
++    <SectionCard title={t('kiro.rules.protection.title')} hint={t('kiro.rules.protection.hint')}>
++      <Stack gap="lg">
++        <Row title={t('kiro.rules.protection.kiro_prompt_guard.name')} help={t('kiro.rules.protection.kiro_prompt_guard.help')}>
++          <Switch
++            aria-label={t('kiro.rules.protection.kiro_prompt_guard.name')}
++            checked={g.kiro_prompt_guard.enabled}
++            onChange={(e) => setSwitch('kiro_prompt_guard', { enabled: e.currentTarget.checked })}
++          />
++        </Row>
++
++        <Row title={t('kiro.rules.protection.kiro_rate_limit.name')} help={t('kiro.rules.protection.kiro_rate_limit.help')}>
++          <Switch
++            aria-label={t('kiro.rules.protection.kiro_rate_limit.name')}
++            checked={g.kiro_rate_limit.enabled}
++            onChange={(e) => setSwitch('kiro_rate_limit', { enabled: e.currentTarget.checked })}
++          />
++        </Row>
++        {g.kiro_rate_limit.enabled && (
++          <Group gap="md" pl="md" wrap="wrap">
++            <NumberInput
++              label={t('kiro.rules.protection.requests')}
++              min={1}
++              w={140}
++              value={g.kiro_rate_limit.requests}
++              onChange={(v) => setSwitch('kiro_rate_limit', { requests: Number(v) || 0 })}
++            />
++            <NumberInput
++              label={t('kiro.rules.protection.windowSeconds')}
++              min={1}
++              w={160}
++              value={g.kiro_rate_limit.window_seconds}
++              onChange={(v) => setSwitch('kiro_rate_limit', { window_seconds: Number(v) || 0 })}
++            />
++          </Group>
++        )}
++
++        <Row title={t('kiro.rules.protection.ai_prompt_guard.name')} help={t('kiro.rules.protection.ai_prompt_guard.help')}>
++          <Switch
++            aria-label={t('kiro.rules.protection.ai_prompt_guard.name')}
++            checked={g.ai_prompt_guard.enabled}
++            onChange={(e) => setSwitch('ai_prompt_guard', { enabled: e.currentTarget.checked })}
++          />
++        </Row>
++
++        <Row title={t('kiro.rules.protection.ai_token_budget.name')} help={t('kiro.rules.protection.ai_token_budget.help')}>
++          <Switch
++            aria-label={t('kiro.rules.protection.ai_token_budget.name')}
++            checked={g.ai_token_budget.enabled}
++            onChange={(e) => setSwitch('ai_token_budget', { enabled: e.currentTarget.checked })}
++          />
++        </Row>
++        {g.ai_token_budget.enabled && (
++          <Group gap="md" pl="md" wrap="wrap">
++            <NumberInput
++              label={t('kiro.rules.protection.tokens')}
++              min={1}
++              w={160}
++              thousandSeparator
++              value={g.ai_token_budget.tokens}
++              onChange={(v) => setSwitch('ai_token_budget', { tokens: Number(v) || 0 })}
++            />
++            <NumberInput
++              label={t('kiro.rules.protection.windowSeconds')}
++              min={1}
++              w={160}
++              value={g.ai_token_budget.window_seconds}
++              onChange={(v) => setSwitch('ai_token_budget', { window_seconds: Number(v) || 0 })}
++            />
++          </Group>
++        )}
++
++        <Textarea
++          label={t('kiro.rules.protection.blockMessage')}
++          description={t('kiro.rules.protection.blockMessageHint')}
++          autosize
++          minRows={2}
++          maxLength={BLOCK_MESSAGE_MAX}
++          value={draft.block_message}
++          onChange={(e) => patch((c) => ({ ...c, block_message: e.currentTarget.value }))}
++        />
++        <Text size="xs" c="dimmed" ta="right">
++          {draft.block_message.length} / {BLOCK_MESSAGE_MAX}
++        </Text>
++      </Stack>
++    </SectionCard>
++  );
++};
+diff --git a/src/kiro/guardrails/rules/ReviewModal.tsx b/src/kiro/guardrails/rules/ReviewModal.tsx
+new file mode 100644
+index 0000000..5cf1ba3
+--- /dev/null
++++ b/src/kiro/guardrails/rules/ReviewModal.tsx
+@@ -0,0 +1,191 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Modal that previews the draft diff and applies it to the gateway. */
++import { Alert, Badge, Button, Code, Group, List, Modal, Stack, Text } from '@mantine/core';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import IconReload from '~icons/tabler/reload';
++
++import type { ConfigDiff, RuleFieldChange } from './draft';
++
++const fmtVal = (v: unknown): string => {
++  if (Array.isArray(v)) return v.join(', ');
++  if (typeof v === 'boolean') return v ? 'on' : 'off';
++  if (v === '' || v == null) return '—';
++  return String(v);
++};
++
++const FieldChange: FC<{ change: RuleFieldChange }> = ({ change }) => {
++  const { t } = useTranslation();
++  const name =
++    {
++      label: t('kiro.rules.field.label'),
++      description: t('kiro.rules.field.description'),
++      pattern: t('kiro.rules.field.pattern'),
++      case_insensitive: t('kiro.rules.field.case_insensitive'),
++      applies_to: t('kiro.rules.field.applies_to'),
++      enabled: t('kiro.rules.field.enabled'),
++      requests: t('kiro.rules.field.requests'),
++      window_seconds: t('kiro.rules.field.window_seconds'),
++      tokens: t('kiro.rules.field.tokens'),
++    }[String(change.field)] ?? String(change.field);
++  return (
++    <Text size="sm">
++      {name}: <Code>{fmtVal(change.from)}</Code> → <Code>{fmtVal(change.to)}</Code>
++    </Text>
++  );
++};
++
++export type ReviewModalProps = {
++  opened: boolean;
++  diff: ConfigDiff;
++  count: number;
++  saving: boolean;
++  conflict: boolean;
++  error: string | null;
++  onClose: () => void;
++  onApply: () => void;
++  onReload: () => void;
++};
++
++export const ReviewModal: FC<ReviewModalProps> = ({
++  opened,
++  diff,
++  count,
++  saving,
++  conflict,
++  error,
++  onClose,
++  onApply,
++  onReload,
++}) => {
++  const { t } = useTranslation();
++  return (
++    <Modal opened={opened} onClose={onClose} size="lg" title={t('kiro.rules.review.title')}>
++      <Stack>
++        <Text size="sm" c="dimmed">
++          {t('kiro.rules.review.summary', { count })}
++        </Text>
++
++        {conflict && (
++          <Alert color="orange" title={t('kiro.rules.review.conflictTitle')}>
++            <Stack gap="xs">
++              <Text size="sm">{t('kiro.rules.review.conflictBody')}</Text>
++              <Group>
++                <Button
++                  size="xs"
++                  variant="light"
++                  color="orange"
++                  leftSection={<IconReload width={14} height={14} />}
++                  onClick={onReload}
++                >
++                  {t('kiro.rules.review.reload')}
++                </Button>
++              </Group>
++            </Stack>
++          </Alert>
++        )}
++        {error && !conflict && (
++          <Alert color="red" title={t('kiro.rules.review.failedTitle')}>
++            {error}
++          </Alert>
++        )}
++
++        {diff.rules.length > 0 && (
++          <Stack gap={6}>
++            <Text fw={600} size="sm">
++              {t('kiro.rules.review.ruleChanges')}
++            </Text>
++            <List spacing="xs" size="sm">
++              {diff.rules.map((d) => (
++                <List.Item key={`${d.kind}-${d.id}`}>
++                  <Group gap={6} wrap="wrap">
++                    {d.kind === 'added' && <Badge color="teal" variant="light">{t('kiro.rules.review.added')}</Badge>}
++                    {d.kind === 'removed' && <Badge color="red" variant="light">{t('kiro.rules.review.removed')}</Badge>}
++                    {d.kind === 'changed' && <Badge color="blue" variant="light">{t('kiro.rules.review.changed')}</Badge>}
++                    {d.kind === 'reordered' && (
++                      <Badge color="grape" variant="light">{t('kiro.rules.review.reordered')}</Badge>
++                    )}
++                    <Text size="sm" fw={500}>
++                      {d.label}
++                    </Text>
++                    <Code>{d.id}</Code>
++                  </Group>
++                  {d.kind === 'changed' && (
++                    <Stack gap={2} pl="md" mt={4}>
++                      {d.fields.map((f) => (
++                        <FieldChange key={String(f.field)} change={f} />
++                      ))}
++                    </Stack>
++                  )}
++                  {d.kind === 'reordered' && (
++                    <Text size="xs" c="dimmed" pl="md">
++                      {t('kiro.rules.review.movedTo', { from: d.from + 1, to: d.to + 1 })}
++                    </Text>
++                  )}
++                </List.Item>
++              ))}
++            </List>
++          </Stack>
++        )}
++
++        {diff.switches.length > 0 && (
++          <Stack gap={6}>
++            <Text fw={600} size="sm">
++              {t('kiro.rules.review.protectionChanges')}
++            </Text>
++            <List spacing="xs" size="sm">
++              {diff.switches.map((s) => (
++                <List.Item key={s.key}>
++                  <Text size="sm" fw={500}>
++                    {t(`kiro.rules.protection.${s.key}.name`)}
++                  </Text>
++                  <Stack gap={2} pl="md" mt={4}>
++                    {s.fields.map((f) => (
++                      <FieldChange key={String(f.field)} change={f} />
++                    ))}
++                  </Stack>
++                </List.Item>
++              ))}
++            </List>
++          </Stack>
++        )}
++
++        {diff.blockMessage && (
++          <Stack gap={6}>
++            <Text fw={600} size="sm">
++              {t('kiro.rules.review.blockMessageChange')}
++            </Text>
++            <Text size="sm">
++              <Code>{fmtVal(diff.blockMessage.from)}</Code> → <Code>{fmtVal(diff.blockMessage.to)}</Code>
++            </Text>
++          </Stack>
++        )}
++
++        <Group justify="flex-end" mt="sm">
++          <Button variant="default" onClick={onClose} disabled={saving}>
++            {t('kiro.rules.review.cancel')}
++          </Button>
++          <Button onClick={onApply} loading={saving} disabled={saving || conflict}>
++            {t('kiro.rules.review.apply')}
++          </Button>
++        </Group>
++      </Stack>
++    </Modal>
++  );
++};
+diff --git a/src/kiro/guardrails/rules/RuleDrawer.tsx b/src/kiro/guardrails/rules/RuleDrawer.tsx
+new file mode 100644
+index 0000000..5a72bb0
+--- /dev/null
++++ b/src/kiro/guardrails/rules/RuleDrawer.tsx
+@@ -0,0 +1,304 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Right-side drawer to add or edit a single block rule. */
++import {
++  Alert,
++  Button,
++  Checkbox,
++  Drawer,
++  Group,
++  Loader,
++  Mark,
++  Stack,
++  Switch,
++  Text,
++  Textarea,
++  TextInput,
++} from '@mantine/core';
++import { useDebouncedValue } from '@mantine/hooks';
++import { Fragment, useEffect, useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import IconCheck from '~icons/tabler/circle-check';
++import IconX from '~icons/tabler/circle-x';
++
++import { checkPattern, type GuardPath, type Rule, slugify } from '../api';
++import { uniqueId } from './draft';
++
++const EMPTY = {
++  label: '',
++  description: '',
++  pattern: '',
++  case_insensitive: false,
++  applies_to: ['kiro', 'ai'] as GuardPath[],
++  enabled: true,
++};
++
++/** Highlight pattern matches in the sample text using the JS regex engine (preview only). */
++const Preview = ({ pattern, caseInsensitive, text }: { pattern: string; caseInsensitive: boolean; text: string }) => {
++  const parts = useMemo(() => {
++    if (!pattern || !text) return null;
++    let re: RegExp;
++    try {
++      re = new RegExp(pattern, caseInsensitive ? 'gi' : 'g');
++    } catch {
++      return null; // Not valid JS regex (e.g. PCRE-only syntax) — no preview.
++    }
++    const out: { text: string; hit: boolean }[] = [];
++    let last = 0;
++    for (const m of text.matchAll(re)) {
++      const i = m.index ?? 0;
++      if (!m[0]) break; // avoid zero-width infinite loop
++      if (i > last) out.push({ text: text.slice(last, i), hit: false });
++      out.push({ text: m[0], hit: true });
++      last = i + m[0].length;
++    }
++    if (last < text.length) out.push({ text: text.slice(last), hit: false });
++    return out;
++  }, [pattern, caseInsensitive, text]);
++
++  const { t } = useTranslation();
++  if (!text) return null;
++  if (!parts) return <Text size="xs" c="dimmed">{t('kiro.rules.preview.noPreview')}</Text>;
++  const anyHit = parts.some((p) => p.hit);
++  return (
++    <Stack gap={4}>
++      <Text size="xs" c="dimmed">
++        {t('kiro.rules.preview.label')}
++      </Text>
++      <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
++        {parts.map((p, i) =>
++          p.hit ? (
++            <Mark key={i} color="red">
++              {p.text}
++            </Mark>
++          ) : (
++            <Fragment key={i}>{p.text}</Fragment>
++          )
++        )}
++      </Text>
++      {!anyHit && (
++        <Text size="xs" c="dimmed">
++          {t('kiro.rules.preview.noMatch')}
++        </Text>
++      )}
++    </Stack>
++  );
++};
++
++export type RuleDrawerProps = {
++  opened: boolean;
++  rule: Rule | null; // null = add
++  existing: Rule[]; // current draft rules, to keep ids unique
++  onClose: () => void;
++  onSubmit: (rule: Rule) => void;
++};
++
++export const RuleDrawer = ({ opened, rule, existing, onClose, onSubmit }: RuleDrawerProps) => {
++  const { t } = useTranslation();
++  const [form, setForm] = useState(EMPTY);
++  const [sample, setSample] = useState('');
++  const [check, setCheck] = useState<{ valid: boolean; error: string | null } | null>(null);
++  const [checking, setChecking] = useState(false);
++  const [touched, setTouched] = useState(false);
++  const editing = rule != null;
++
++  // Reset the form whenever the drawer opens for a different rule.
++  useEffect(() => {
++    if (!opened) return;
++    setForm(
++      rule
++        ? {
++            label: rule.label,
++            description: rule.description ?? '',
++            pattern: rule.pattern,
++            case_insensitive: rule.case_insensitive,
++            applies_to: [...rule.applies_to],
++            enabled: rule.enabled,
++          }
++        : EMPTY
++    );
++    setSample('');
++    setCheck(null);
++    setTouched(false);
++  }, [opened, rule]);
++
++  const [debounced] = useDebouncedValue(form.pattern, 400);
++  useEffect(() => {
++    if (!opened || !debounced) {
++      setCheck(null);
++      setChecking(false);
++      return;
++    }
++    let alive = true;
++    setChecking(true);
++    checkPattern(debounced)
++      .then((r) => alive && setCheck(r))
++      .catch(() => alive && setCheck({ valid: false, error: 'check failed' }))
++      .finally(() => alive && setChecking(false));
++    return () => {
++      alive = false;
++    };
++  }, [debounced, opened]);
++
++  const id = editing
++    ? rule!.id
++    : form.label.trim()
++      ? uniqueId(slugify(form.label), existing)
++      : t('kiro.rules.drawer.idFromName');
++
++  const labelError = touched && !form.label.trim() ? t('kiro.rules.drawer.nameRequired') : null;
++  const patternError = touched && !form.pattern ? t('kiro.rules.drawer.patternRequired') : null;
++  const appliesError = touched && form.applies_to.length === 0 ? t('kiro.rules.drawer.appliesRequired') : null;
++  const invalid =
++    !form.label.trim() || !form.pattern || form.applies_to.length === 0 || check?.valid === false || checking;
++
++  const toggleApplies = (p: GuardPath, on: boolean) =>
++    setForm((f) => ({
++      ...f,
++      applies_to: on ? [...new Set([...f.applies_to, p])] : f.applies_to.filter((x) => x !== p),
++    }));
++
++  const submit = () => {
++    setTouched(true);
++    if (invalid) return;
++    onSubmit({
++      id,
++      label: form.label.trim(),
++      description: form.description.trim(),
++      pattern: form.pattern,
++      case_insensitive: form.case_insensitive,
++      applies_to: form.applies_to,
++      enabled: form.enabled,
++    });
++  };
++
++  return (
++    <Drawer
++      opened={opened}
++      onClose={onClose}
++      position="right"
++      size="lg"
++      title={editing ? t('kiro.rules.drawer.editTitle') : t('kiro.rules.drawer.addTitle')}
++    >
++      <Stack>
++        <TextInput
++          label={t('kiro.rules.drawer.name')}
++          placeholder={t('kiro.rules.drawer.namePlaceholder')}
++          value={form.label}
++          error={labelError}
++          onChange={(e) => setForm((f) => ({ ...f, label: e.currentTarget.value }))}
++        />
++        <TextInput label={t('kiro.rules.drawer.id')} value={id} readOnly ff="monospace" />
++        <Textarea
++          label={t('kiro.rules.drawer.description')}
++          placeholder={t('kiro.rules.drawer.descriptionPlaceholder')}
++          autosize
++          minRows={2}
++          value={form.description}
++          onChange={(e) => setForm((f) => ({ ...f, description: e.currentTarget.value }))}
++        />
++        <Textarea
++          label={t('kiro.rules.drawer.pattern')}
++          description={t('kiro.rules.drawer.patternHint')}
++          placeholder={t('kiro.rules.drawer.patternPlaceholder')}
++          autosize
++          minRows={2}
++          error={patternError}
++          styles={{ input: { fontFamily: 'monospace' } }}
++          value={form.pattern}
++          onChange={(e) => setForm((f) => ({ ...f, pattern: e.currentTarget.value }))}
++        />
++        {form.pattern &&
++          (checking ? (
++            <Group gap={6}>
++              <Loader size="xs" />
++              <Text size="xs" c="dimmed">
++                {t('kiro.rules.drawer.checking')}
++              </Text>
++            </Group>
++          ) : check ? (
++            check.valid ? (
++              <Group gap={6} c="teal">
++                <IconCheck width={16} height={16} />
++                <Text size="xs">{t('kiro.rules.drawer.patternValid')}</Text>
++              </Group>
++            ) : (
++              <Group gap={6} c="red">
++                <IconX width={16} height={16} />
++                <Text size="xs">{check.error ?? t('kiro.rules.drawer.patternInvalid')}</Text>
++              </Group>
++            )
++          ) : null)}
++        <Switch
++          label={t('kiro.rules.drawer.caseInsensitive')}
++          checked={form.case_insensitive}
++          onChange={(e) => setForm((f) => ({ ...f, case_insensitive: e.currentTarget.checked }))}
++        />
++        <Checkbox.Group
++          label={t('kiro.rules.drawer.appliesTo')}
++          error={appliesError}
++          value={form.applies_to}
++        >
++          <Group mt={6} gap="lg">
++            <Checkbox
++              value="kiro"
++              label={t('kiro.guard.path.kiro')}
++              checked={form.applies_to.includes('kiro')}
++              onChange={(e) => toggleApplies('kiro', e.currentTarget.checked)}
++            />
++            <Checkbox
++              value="ai"
++              label={t('kiro.guard.path.ai')}
++              checked={form.applies_to.includes('ai')}
++              onChange={(e) => toggleApplies('ai', e.currentTarget.checked)}
++            />
++          </Group>
++        </Checkbox.Group>
++        <Switch
++          label={t('kiro.rules.drawer.enabled')}
++          checked={form.enabled}
++          onChange={(e) => setForm((f) => ({ ...f, enabled: e.currentTarget.checked }))}
++        />
++
++        <Alert color="gray" variant="light" title={t('kiro.rules.tryIt.title')}>
++          <Stack gap="xs">
++            <Text size="xs" c="dimmed">
++              {t('kiro.rules.tryIt.note')}
++            </Text>
++            <Textarea
++              label={t('kiro.rules.tryIt.sample')}
++              placeholder={t('kiro.rules.tryIt.samplePlaceholder')}
++              autosize
++              minRows={2}
++              value={sample}
++              onChange={(e) => setSample(e.currentTarget.value)}
++            />
++            <Preview pattern={form.pattern} caseInsensitive={form.case_insensitive} text={sample} />
++          </Stack>
++        </Alert>
++
++        <Group justify="flex-end" mt="sm">
++          <Button variant="default" onClick={onClose}>
++            {t('kiro.rules.drawer.cancel')}
++          </Button>
++          <Button onClick={submit}>{t('kiro.rules.drawer.save')}</Button>
++        </Group>
++      </Stack>
++    </Drawer>
++  );
++};
+diff --git a/src/kiro/guardrails/rules/RulesPage.tsx b/src/kiro/guardrails/rules/RulesPage.tsx
+new file mode 100644
+index 0000000..1a7ad10
+--- /dev/null
++++ b/src/kiro/guardrails/rules/RulesPage.tsx
+@@ -0,0 +1,280 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** AI Guardrails — Block rules page (review-before-apply draft editing). */
++import { Box, Button, Card, Group, Paper, Skeleton, Stack, Text, TextInput } from '@mantine/core';
++import { useDisclosure } from '@mantine/hooks';
++import { notifications } from '@mantine/notifications';
++import { useCallback, useEffect, useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { ConsoleApiError } from '@/kiro/api';
++import { PortalPageHeader } from '@/kiro/shell/Page';
++import IconPlus from '~icons/tabler/plus';
++import IconSearch from '~icons/tabler/search';
++
++import { type GuardrailConfig, type Rule, useGuardrails, useSaveGuardrails } from '../api';
++import { EmptyState, ErrorState } from '../ui';
++import { cloneConfig, countChanges, diffConfig } from './draft';
++import { HistoryCard } from './HistoryCard';
++import { ProtectionsCard } from './ProtectionsCard';
++import { ReviewModal } from './ReviewModal';
++import { RuleDrawer } from './RuleDrawer';
++import { RulesTable } from './RulesTable';
++
++const RulesPage = () => {
++  const { t } = useTranslation();
++  const { data, isLoading, error, refetch } = useGuardrails();
++  const save = useSaveGuardrails();
++
++  const saved = data?.config as GuardrailConfig | undefined;
++  const version = data?.version;
++
++  const [draft, setDraft] = useState<GuardrailConfig | null>(null);
++  const [query, setQuery] = useState('');
++  const [editRule, setEditRule] = useState<Rule | null>(null);
++  const [drawer, { open: openDrawer, close: closeDrawer }] = useDisclosure(false);
++  const [review, { open: openReview, close: closeReview }] = useDisclosure(false);
++  const [conflict, setConflict] = useState(false);
++  const [applyError, setApplyError] = useState<string | null>(null);
++
++  // Seed the draft from the saved config the first time it loads.
++  useEffect(() => {
++    if (saved && !draft) setDraft(cloneConfig(saved));
++  }, [saved, draft]);
++
++  const diff = useMemo(
++    () => (saved && draft ? diffConfig(saved, draft) : { rules: [], switches: [], blockMessage: null }),
++    [saved, draft]
++  );
++  const changes = countChanges(diff);
++  const dirty = changes > 0;
++
++  // Warn on tab close with unsaved changes.
++  useEffect(() => {
++    if (!dirty) return;
++    const h = (e: BeforeUnloadEvent) => {
++      e.preventDefault();
++      e.returnValue = '';
++    };
++    window.addEventListener('beforeunload', h);
++    return () => window.removeEventListener('beforeunload', h);
++  }, [dirty]);
++
++  const patch = useCallback((fn: (c: GuardrailConfig) => GuardrailConfig) => {
++    setDraft((d) => (d ? fn(d) : d));
++  }, []);
++
++  const openAdd = () => {
++    setEditRule(null);
++    openDrawer();
++  };
++  const openEdit = (rule: Rule) => {
++    setEditRule(rule);
++    openDrawer();
++  };
++
++  const submitRule = (rule: Rule) => {
++    patch((c) => {
++      const idx = c.rules.findIndex((r) => r.id === rule.id);
++      const rules = [...c.rules];
++      if (idx >= 0) rules[idx] = rule;
++      else rules.push(rule);
++      return { ...c, rules };
++    });
++    closeDrawer();
++  };
++
++  const toggleRule = (id: string, enabled: boolean) =>
++    patch((c) => ({ ...c, rules: c.rules.map((r) => (r.id === id ? { ...r, enabled } : r)) }));
++
++  const moveRule = (id: string, dir: -1 | 1) =>
++    patch((c) => {
++      const i = c.rules.findIndex((r) => r.id === id);
++      const j = i + dir;
++      if (i < 0 || j < 0 || j >= c.rules.length) return c;
++      const rules = [...c.rules];
++      [rules[i], rules[j]] = [rules[j], rules[i]];
++      return { ...c, rules };
++    });
++
++  const deleteRule = (rule: Rule) =>
++    patch((c) => ({ ...c, rules: c.rules.filter((r) => r.id !== rule.id) }));
++
++  const discard = () => {
++    if (saved) setDraft(cloneConfig(saved));
++    setConflict(false);
++    setApplyError(null);
++    closeReview();
++  };
++
++  const reload = () => {
++    refetch().then((r) => {
++      if (r.data?.config) setDraft(cloneConfig(r.data.config as GuardrailConfig));
++      setConflict(false);
++      setApplyError(null);
++      closeReview();
++    });
++  };
++
++  const apply = () => {
++    if (!draft || !version) return;
++    setConflict(false);
++    setApplyError(null);
++    save.mutate(
++      { config: draft, base_version: version },
++      {
++        onSuccess: (res) => {
++          notifications.show({
++            color: 'teal',
++            title: t('kiro.rules.notify.appliedTitle'),
++            message: t('kiro.rules.notify.appliedBody', { commit: res.commit }),
++          });
++          closeReview();
++        },
++        onError: (e) => {
++          if (e instanceof ConsoleApiError && e.status === 409) {
++            setConflict(true);
++          } else {
++            setApplyError(e instanceof Error ? e.message : String(e));
++          }
++        },
++      }
++    );
++  };
++
++  const filtered = useMemo(() => {
++    if (!draft) return [];
++    const q = query.trim().toLowerCase();
++    if (!q) return draft.rules;
++    return draft.rules.filter(
++      (r) =>
++        r.label.toLowerCase().includes(q) ||
++        r.id.toLowerCase().includes(q) ||
++        r.description.toLowerCase().includes(q) ||
++        r.pattern.toLowerCase().includes(q)
++    );
++  }, [draft, query]);
++
++  const header = (
++    <PortalPageHeader
++      title={t('kiro.rules.pageTitle')}
++      subtitle={t('kiro.rules.pageSubtitle')}
++      actions={
++        <Button leftSection={<IconPlus width={16} height={16} />} onClick={openAdd} disabled={!draft}>
++          {t('kiro.rules.addRule')}
++        </Button>
++      }
++    />
++  );
++
++  if (isLoading || (!draft && !error)) {
++    return (
++      <Box maw={1440}>
++        {header}
++        <Stack>
++          <Skeleton h={320} radius="md" />
++          <Skeleton h={200} radius="md" />
++        </Stack>
++      </Box>
++    );
++  }
++
++  if (error || !draft) {
++    return (
++      <Box maw={1440}>
++        {header}
++        <Card withBorder>
++          <ErrorState error={error ?? new Error('no data')} />
++        </Card>
++      </Box>
++    );
++  }
++
++  return (
++    <Box maw={1440} pb={dirty ? 72 : 0}>
++      {header}
++
++      <Stack>
++        <Card withBorder>
++          <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
++            <Text fw={600}>{t('kiro.rules.listTitle')}</Text>
++            <TextInput
++              leftSection={<IconSearch width={16} height={16} />}
++              placeholder={t('kiro.rules.searchPlaceholder')}
++              value={query}
++              onChange={(e) => setQuery(e.currentTarget.value)}
++              w={260}
++              aria-label={t('kiro.rules.searchPlaceholder')}
++            />
++          </Group>
++          {draft.rules.length === 0 ? (
++            <EmptyState title={t('kiro.rules.emptyTitle')} body={t('kiro.rules.emptyBody')} />
++          ) : filtered.length === 0 ? (
++            <EmptyState title={t('kiro.rules.noMatchTitle')} body={t('kiro.rules.noMatchBody')} />
++          ) : (
++            <RulesTable
++              rules={filtered}
++              onToggle={toggleRule}
++              onEdit={openEdit}
++              onMove={moveRule}
++              onDelete={deleteRule}
++            />
++          )}
++        </Card>
++
++        <ProtectionsCard draft={draft} patch={patch} />
++        <HistoryCard />
++      </Stack>
++
++      {dirty && (
++        <Paper shadow="md" withBorder p="sm" pos="fixed" bottom={0} left={0} right={0} style={{ zIndex: 200 }}>
++          <Group justify="space-between" maw={1440} mx="auto" wrap="wrap" gap="sm">
++            <Text fw={500}>{t('kiro.rules.sticky.count', { count: changes })}</Text>
++            <Group gap="sm">
++              <Button variant="default" onClick={discard}>
++                {t('kiro.rules.sticky.discard')}
++              </Button>
++              <Button onClick={openReview}>{t('kiro.rules.sticky.review')}</Button>
++            </Group>
++          </Group>
++        </Paper>
++      )}
++
++      <RuleDrawer
++        opened={drawer}
++        rule={editRule}
++        existing={draft.rules}
++        onClose={closeDrawer}
++        onSubmit={submitRule}
++      />
++
++      <ReviewModal
++        opened={review}
++        diff={diff}
++        count={changes}
++        saving={save.isPending}
++        conflict={conflict}
++        error={applyError}
++        onClose={closeReview}
++        onApply={apply}
++        onReload={reload}
++      />
++    </Box>
++  );
++};
++
++export default RulesPage;
+diff --git a/src/kiro/guardrails/rules/RulesTable.tsx b/src/kiro/guardrails/rules/RulesTable.tsx
+new file mode 100644
+index 0000000..7b6cd17
+--- /dev/null
++++ b/src/kiro/guardrails/rules/RulesTable.tsx
+@@ -0,0 +1,144 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Table of block rules, one row per rule, checked top to bottom. */
++import { ActionIcon, Badge, Code, Group, Menu, Stack, Switch, Table, Text, Tooltip } from '@mantine/core';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import IconDown from '~icons/tabler/arrow-down';
++import IconUp from '~icons/tabler/arrow-up';
++import IconDots from '~icons/tabler/dots-vertical';
++import IconEdit from '~icons/tabler/edit';
++import IconTrash from '~icons/tabler/trash';
++
++import type { Rule } from '../api';
++import { PathBadge } from '../ui';
++
++export type RulesTableProps = {
++  rules: Rule[];
++  onToggle: (id: string, enabled: boolean) => void;
++  onEdit: (rule: Rule) => void;
++  onMove: (id: string, dir: -1 | 1) => void;
++  onDelete: (rule: Rule) => void;
++};
++
++export const RulesTable: FC<RulesTableProps> = ({ rules, onToggle, onEdit, onMove, onDelete }) => {
++  const { t } = useTranslation();
++  return (
++    <Table.ScrollContainer minWidth={720}>
++      <Table verticalSpacing="sm" highlightOnHover>
++        <Table.Thead>
++          <Table.Tr>
++            <Table.Th w={60}>{t('kiro.rules.table.on')}</Table.Th>
++            <Table.Th w={56}>{t('kiro.rules.table.order')}</Table.Th>
++            <Table.Th>{t('kiro.rules.table.rule')}</Table.Th>
++            <Table.Th>{t('kiro.rules.table.pattern')}</Table.Th>
++            <Table.Th>{t('kiro.rules.table.appliesTo')}</Table.Th>
++            <Table.Th w={56} ta="right">
++              {t('kiro.rules.table.actions')}
++            </Table.Th>
++          </Table.Tr>
++        </Table.Thead>
++        <Table.Tbody>
++          {rules.map((r, i) => (
++            <Table.Tr key={r.id} opacity={r.enabled ? 1 : 0.55}>
++              <Table.Td>
++                <Switch
++                  size="sm"
++                  aria-label={t('kiro.rules.table.toggleAria', { label: r.label })}
++                  checked={r.enabled}
++                  onChange={(e) => onToggle(r.id, e.currentTarget.checked)}
++                />
++              </Table.Td>
++              <Table.Td>
++                <Text size="sm" c="dimmed">
++                  {i + 1}
++                </Text>
++              </Table.Td>
++              <Table.Td>
++                <Stack gap={2}>
++                  <Group gap={6} wrap="wrap">
++                    <Text size="sm" fw={500}>
++                      {r.label}
++                    </Text>
++                    <Code fz="xs">{r.id}</Code>
++                    {r.case_insensitive && (
++                      <Badge size="xs" variant="light" color="gray">
++                        {t('kiro.rules.table.anyCase')}
++                      </Badge>
++                    )}
++                  </Group>
++                  {r.description && (
++                    <Text size="xs" c="dimmed">
++                      {r.description}
++                    </Text>
++                  )}
++                </Stack>
++              </Table.Td>
++              <Table.Td>
++                <Tooltip label={r.pattern} multiline maw={420} withArrow>
++                  <Code fz="xs" style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
++                    {r.pattern}
++                  </Code>
++                </Tooltip>
++              </Table.Td>
++              <Table.Td>
++                <Group gap={4}>
++                  {r.applies_to.map((p) => (
++                    <PathBadge key={p} path={p} />
++                  ))}
++                </Group>
++              </Table.Td>
++              <Table.Td ta="right">
++                <Menu position="bottom-end" withinPortal>
++                  <Menu.Target>
++                    <ActionIcon variant="subtle" color="gray" aria-label={t('kiro.rules.table.actionsAria', { label: r.label })}>
++                      <IconDots width={18} height={18} />
++                    </ActionIcon>
++                  </Menu.Target>
++                  <Menu.Dropdown>
++                    <Menu.Item leftSection={<IconEdit width={16} height={16} />} onClick={() => onEdit(r)}>
++                      {t('kiro.rules.table.edit')}
++                    </Menu.Item>
++                    <Menu.Item
++                      leftSection={<IconUp width={16} height={16} />}
++                      disabled={i === 0}
++                      onClick={() => onMove(r.id, -1)}
++                    >
++                      {t('kiro.rules.table.moveUp')}
++                    </Menu.Item>
++                    <Menu.Item
++                      leftSection={<IconDown width={16} height={16} />}
++                      disabled={i === rules.length - 1}
++                      onClick={() => onMove(r.id, 1)}
++                    >
++                      {t('kiro.rules.table.moveDown')}
++                    </Menu.Item>
++                    <Menu.Divider />
++                    <Menu.Item color="red" leftSection={<IconTrash width={16} height={16} />} onClick={() => onDelete(r)}>
++                      {t('kiro.rules.table.delete')}
++                    </Menu.Item>
++                  </Menu.Dropdown>
++                </Menu>
++              </Table.Td>
++            </Table.Tr>
++          ))}
++        </Table.Tbody>
++      </Table>
++    </Table.ScrollContainer>
++  );
++};
+diff --git a/src/kiro/guardrails/rules/draft.ts b/src/kiro/guardrails/rules/draft.ts
+new file mode 100644
+index 0000000..3fb0ce3
+--- /dev/null
++++ b/src/kiro/guardrails/rules/draft.ts
+@@ -0,0 +1,126 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Local draft of the guardrail config and the diff between saved and draft. */
++import type { GuardrailConfig, GuardrailSwitches, Rule } from '../api';
++
++/** Deep clone the editable part of the config so edits never mutate the query cache. */
++export const cloneConfig = (c: GuardrailConfig): GuardrailConfig => ({
++  block_message: c.block_message,
++  rules: c.rules.map((r) => ({ ...r, applies_to: [...r.applies_to] })),
++  guardrails: {
++    kiro_prompt_guard: { ...c.guardrails.kiro_prompt_guard },
++    kiro_rate_limit: { ...c.guardrails.kiro_rate_limit },
++    ai_prompt_guard: { ...c.guardrails.ai_prompt_guard },
++    ai_token_budget: { ...c.guardrails.ai_token_budget },
++  },
++});
++
++/** A unique rule id derived from a slug base, avoiding ids already used in the draft. */
++export const uniqueId = (base: string, rules: Rule[]) => {
++  const seed = base || 'rule';
++  let id = seed;
++  let i = 2;
++  while (rules.some((r) => r.id === id)) id = `${seed}-${i++}`;
++  return id;
++};
++
++export type RuleFieldChange = { field: string; from: unknown; to: unknown };
++
++export type RuleDiff =
++  | { kind: 'added'; id: string; label: string }
++  | { kind: 'removed'; id: string; label: string }
++  | { kind: 'reordered'; id: string; label: string; from: number; to: number }
++  | { kind: 'changed'; id: string; label: string; fields: RuleFieldChange[] };
++
++export type SwitchDiff = { key: keyof GuardrailSwitches; fields: RuleFieldChange[] };
++
++export type ConfigDiff = {
++  rules: RuleDiff[];
++  switches: SwitchDiff[];
++  blockMessage: { from: string; to: string } | null;
++};
++
++const RULE_FIELDS: (keyof Rule)[] = [
++  'label',
++  'description',
++  'pattern',
++  'case_insensitive',
++  'applies_to',
++  'enabled',
++];
++
++const sameValue = (a: unknown, b: unknown) =>
++  Array.isArray(a) && Array.isArray(b) ? JSON.stringify(a) === JSON.stringify(b) : a === b;
++
++/** Human-readable list of what changed between the saved config and the draft. */
++export const diffConfig = (saved: GuardrailConfig, draft: GuardrailConfig): ConfigDiff => {
++  const savedById = new Map(saved.rules.map((r) => [r.id, r]));
++  const draftById = new Map(draft.rules.map((r) => [r.id, r]));
++  const savedOrder = new Map(saved.rules.map((r, i) => [r.id, i]));
++
++  const rules: RuleDiff[] = [];
++  for (const r of draft.rules) {
++    const prev = savedById.get(r.id);
++    if (!prev) {
++      rules.push({ kind: 'added', id: r.id, label: r.label });
++      continue;
++    }
++    const fields: RuleFieldChange[] = [];
++    for (const f of RULE_FIELDS) {
++      if (!sameValue(prev[f], r[f])) fields.push({ field: f, from: prev[f], to: r[f] });
++    }
++    if (fields.length) rules.push({ kind: 'changed', id: r.id, label: r.label, fields });
++  }
++  for (const r of saved.rules) {
++    if (!draftById.has(r.id)) rules.push({ kind: 'removed', id: r.id, label: r.label });
++  }
++  // Order changes among rules present in both, with no field changes already listed.
++  const common = draft.rules.filter((r) => savedById.has(r.id));
++  common.forEach((r, newIdx) => {
++    const oldIdx = savedOrder.get(r.id)!;
++    const alreadyListed = rules.some((d) => d.id === r.id && d.kind !== 'reordered');
++    // Compare position within the common subsequence to detect genuine reorder.
++    const oldCommon = saved.rules.filter((s) => draftById.has(s.id)).findIndex((s) => s.id === r.id);
++    if (oldCommon !== newIdx && !alreadyListed) {
++      rules.push({ kind: 'reordered', id: r.id, label: r.label, from: oldIdx, to: newIdx });
++    }
++  });
++
++  const switches: SwitchDiff[] = [];
++  (Object.keys(draft.guardrails) as (keyof GuardrailSwitches)[]).forEach((key) => {
++    const a = saved.guardrails[key] as Record<string, unknown>;
++    const b = draft.guardrails[key] as Record<string, unknown>;
++    const fields: RuleFieldChange[] = [];
++    Object.keys(b).forEach((k) => {
++      if (!sameValue(a[k], b[k])) fields.push({ field: k, from: a[k], to: b[k] });
++    });
++    if (fields.length) switches.push({ key, fields });
++  });
++
++  return {
++    rules,
++    switches,
++    blockMessage:
++      saved.block_message !== draft.block_message
++        ? { from: saved.block_message, to: draft.block_message }
++        : null,
++  };
++};
++
++/** Count of distinct user-visible changes, for the sticky bar. */
++export const countChanges = (d: ConfigDiff) =>
++  d.rules.length + d.switches.length + (d.blockMessage ? 1 : 0);
+diff --git a/src/kiro/guardrails/tester/TesterPage.tsx b/src/kiro/guardrails/tester/TesterPage.tsx
+new file mode 100644
+index 0000000..991004c
+--- /dev/null
++++ b/src/kiro/guardrails/tester/TesterPage.tsx
+@@ -0,0 +1,270 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import {
++  Alert,
++  Badge,
++  Box,
++  Button,
++  Card,
++  Center,
++  Grid,
++  Group,
++  Highlight,
++  Mark,
++  SegmentedControl,
++  Stack,
++  Text,
++  Textarea,
++  ThemeIcon,
++} from '@mantine/core';
++import { useMutation } from '@tanstack/react-query';
++import { useEffect, useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { PortalPageHeader } from '@/kiro/shell/Page';
++import IconAlert from '~icons/tabler/alert-triangle';
++import IconCheck from '~icons/tabler/circle-check';
++import IconX from '~icons/tabler/circle-x';
++import IconFlask from '~icons/tabler/flask';
++
++import { TESTER_PREFILL_KEY } from '../activity/ActivityDrawer';
++import type { GuardPath, TestResult } from '../api';
++import { testPrompt } from '../api';
++import { fmtNumber } from '../format';
++import { ErrorState } from '../ui';
++
++const MAX_CHARS = 20000;
++
++const EXAMPLES = [
++  { label: 'kiro.tester.example.clean', text: 'How do I reverse a linked list in Python without recursion?' },
++  { label: 'kiro.tester.example.email', text: 'Please email the report to jordan.lee@example.com by Friday.' },
++  { label: 'kiro.tester.example.awsKey', text: 'Here is the key: AKIAIOSFODNN7EXAMPLE — use it to deploy.' },
++  { label: 'kiro.tester.example.thaiPhone', text: 'โทรกลับที่เบอร์ 081-234-5678 ด้วยนะครับ' },
++] as const;
++
++export const TesterPage = () => {
++  const { t, i18n } = useTranslation();
++  const [text, setText] = useState('');
++  const [path, setPath] = useState<GuardPath>('kiro');
++
++  // Pull a prefill handed over from the Activity drawer, then clear it so a reload starts fresh.
++  useEffect(() => {
++    try {
++      const pre = sessionStorage.getItem(TESTER_PREFILL_KEY);
++      if (pre) {
++        setText(pre.slice(0, MAX_CHARS));
++        sessionStorage.removeItem(TESTER_PREFILL_KEY);
++      }
++    } catch {
++      /* storage may be unavailable */
++    }
++  }, []);
++
++  const mutation = useMutation({
++    mutationFn: ({ value, p }: { value: string; p: GuardPath }) => testPrompt(value, p),
++  });
++
++  const run = () => {
++    const value = text.trim();
++    if (!value) return;
++    mutation.mutate({ value, p: path });
++  };
++
++  const onKeyDown = (e: React.KeyboardEvent) => {
++    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
++      e.preventDefault();
++      run();
++    }
++  };
++
++  const result = mutation.data;
++  const matchStrings = useMemo(
++    () => (result?.matches ?? []).map((m) => m.match).filter((m): m is string => !!m),
++    [result],
++  );
++
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader title={t('kiro.tester.title')} subtitle={t('kiro.tester.subtitle')} />
++      <Grid gutter="md">
++        <Grid.Col span={{ base: 12, md: 6 }}>
++          <Card withBorder h="100%">
++            <Stack gap="md">
++              <Box>
++                <Text size="sm" fw={500} mb={4}>
++                  {t('kiro.tester.path')}
++                </Text>
++                <SegmentedControl
++                  value={path}
++                  onChange={(v) => setPath(v as GuardPath)}
++                  data={[
++                    { value: 'kiro', label: t('kiro.guard.path.kiro') },
++                    { value: 'ai', label: t('kiro.guard.path.ai') },
++                  ]}
++                />
++              </Box>
++              <Textarea
++                label={t('kiro.tester.inputLabel')}
++                placeholder={t('kiro.tester.inputPlaceholder')}
++                value={text}
++                onChange={(e) => setText(e.currentTarget.value.slice(0, MAX_CHARS))}
++                onKeyDown={onKeyDown}
++                autosize
++                minRows={6}
++                maxRows={16}
++                maxLength={MAX_CHARS}
++              />
++              <Group justify="space-between">
++                <Text size="xs" c="dimmed">
++                  {t('kiro.tester.counter', {
++                    count: fmtNumber(text.length, i18n.language),
++                    max: fmtNumber(MAX_CHARS, i18n.language),
++                  })}
++                </Text>
++              </Group>
++              <Box>
++                <Text size="xs" c="dimmed" mb={6}>
++                  {t('kiro.tester.examplesLabel')}
++                </Text>
++                <Group gap="xs">
++                  {EXAMPLES.map((ex) => (
++                    <Badge
++                      key={ex.label}
++                      component="button"
++                      variant="light"
++                      color="gray"
++                      radius="sm"
++                      style={{ cursor: 'pointer' }}
++                      onClick={() => setText(ex.text)}
++                    >
++                      {t(ex.label)}
++                    </Badge>
++                  ))}
++                </Group>
++              </Box>
++              <Button
++                leftSection={<IconFlask width={16} height={16} />}
++                onClick={run}
++                loading={mutation.isPending}
++                disabled={!text.trim()}
++              >
++                {t('kiro.tester.check')}
++              </Button>
++            </Stack>
++          </Card>
++        </Grid.Col>
++
++        <Grid.Col span={{ base: 12, md: 6 }}>
++          <Card withBorder h="100%">
++            {mutation.isError ? (
++              <ErrorState error={mutation.error} />
++            ) : result ? (
++              <ResultView result={result} input={text} matchStrings={matchStrings} />
++            ) : (
++              <Center h="100%" mih={240}>
++                <Stack align="center" gap={8} maw={380}>
++                  <ThemeIcon variant="light" color="gray" size={44} radius="md">
++                    <IconFlask width={22} height={22} />
++                  </ThemeIcon>
++                  <Text fw={500}>{t('kiro.tester.idle.title')}</Text>
++                  <Text size="sm" c="dimmed" ta="center">
++                    {t('kiro.tester.idle.body')}
++                  </Text>
++                </Stack>
++              </Center>
++            )}
++          </Card>
++        </Grid.Col>
++      </Grid>
++    </Box>
++  );
++};
++
++const ResultView = ({
++  result,
++  input,
++  matchStrings,
++}: {
++  result: TestResult;
++  input: string;
++  matchStrings: string[];
++}) => {
++  const { t, i18n } = useTranslation();
++  const blocked = result.would_block;
++
++  return (
++    <Stack gap="md">
++      <Group gap="sm" wrap="nowrap">
++        <ThemeIcon size={44} radius="xl" variant="light" color={blocked ? 'red' : 'teal'}>
++          {blocked ? <IconX width={26} height={26} /> : <IconCheck width={26} height={26} />}
++        </ThemeIcon>
++        <Text fw={700} size="xl" c={blocked ? 'red' : 'teal'}>
++          {blocked ? t('kiro.tester.verdict.blocked') : t('kiro.tester.verdict.allowed')}
++        </Text>
++      </Group>
++
++      {!result.guard_enabled && (
++        <Alert color="yellow" variant="light" icon={<IconAlert width={18} height={18} />}>
++          {t('kiro.tester.guardDisabled')}
++        </Alert>
++      )}
++
++      <Text size="sm" c="dimmed">
++        {t('kiro.tester.rulesChecked', { count: fmtNumber(result.rules_checked, i18n.language) })}
++      </Text>
++
++      {result.matches.length > 0 && (
++        <Stack gap={6}>
++          <Text size="sm" fw={600}>
++            {t('kiro.tester.matchesTitle')}
++          </Text>
++          {result.matches.map((m) => (
++            <Group key={m.id} gap="xs" wrap="nowrap">
++              <Badge color="red" variant="light" radius="sm">
++                {m.label}
++              </Badge>
++              {m.match && (
++                <Mark color="red">
++                  <Text span size="sm" ff="monospace">
++                    {m.match}
++                  </Text>
++                </Mark>
++              )}
++            </Group>
++          ))}
++        </Stack>
++      )}
++
++      <Stack gap={6}>
++        <Text size="sm" fw={600}>
++          {t('kiro.tester.inputTitle')}
++        </Text>
++        <Card withBorder radius="sm" bg="var(--mantine-color-default-hover)">
++          <Highlight
++            component="div"
++            size="sm"
++            ff="monospace"
++            highlight={matchStrings}
++            style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
++          >
++            {input || t('kiro.tester.emptyInput')}
++          </Highlight>
++        </Card>
++      </Stack>
++    </Stack>
++  );
++};
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 6b00bab..77c55ba 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -517,6 +517,283 @@
+         "unknown": "Frühere Blockierung (Regel nicht erfasst)"
+       },
+       "loadError": "Daten konnten nicht geladen werden"
++    },
++    "activity": {
++      "title": "Aktivität",
++      "subtitle": "Jeder vom Gateway geprüfte Prompt, neueste zuerst. Aktualisierung alle 5 Sekunden.",
++      "showMore": "Mehr anzeigen",
++      "notStored": "Für AI-Route nicht gespeichert",
++      "live": {
++        "on": "Live",
++        "paused": "Pausiert",
++        "pause": "Live-Aktualisierung anhalten",
++        "resume": "Live-Aktualisierung fortsetzen"
++      },
++      "filter": {
++        "search": "Suche",
++        "searchPlaceholder": "Prompts und Benutzer durchsuchen",
++        "result": "Ergebnis",
++        "resultAll": "Alle",
++        "path": "Route",
++        "pathAll": "Alle",
++        "window": "Zeitfenster",
++        "window1h": "Letzte Stunde",
++        "window24h": "Letzte 24 Stunden",
++        "window7d": "Letzte 7 Tage",
++        "window30d": "Letzte 30 Tage",
++        "allOps": "Hintergrundaufrufe einbeziehen"
++      },
++      "col": {
++        "time": "Zeit",
++        "result": "Ergebnis",
++        "rule": "Regel",
++        "path": "Route",
++        "user": "Benutzer",
++        "prompt": "Prompt-Vorschau",
++        "latency": "Latenz"
++      },
++      "empty": {
++        "title": "Keine passende Aktivität",
++        "body": "Im gewählten Zeitfenster entsprach nichts diesen Filtern. Erweitere das Fenster oder leere die Suche."
++      },
++      "drawer": {
++        "title": "Anfragedetails",
++        "host": "Host",
++        "op": "Vorgang",
++        "status": "Statuscode",
++        "model": "Modell",
++        "tokens": "Tokens",
++        "message": "Benutzernachricht",
++        "emptyMessage": "Kein Nachrichtentext.",
++        "testPrompt": "Diesen Prompt testen",
++        "contextToggle": "Kiro-Kontext (verborgene Präambel)",
++        "emptyContext": "Kein verborgener Kontext."
++      }
++    },
++    "tester": {
++      "title": "Prompt-Tester",
++      "subtitle": "Prüfe einen Prompt gegen die aktiven Regeln, ohne ihn an das Modell zu senden.",
++      "path": "Route",
++      "inputLabel": "Prompt",
++      "inputPlaceholder": "Prompt zum Prüfen einfügen oder eingeben…",
++      "counter": "{{count}} / {{max}} Zeichen",
++      "examplesLabel": "Beispiel ausprobieren:",
++      "example": {
++        "clean": "Saubere Code-Frage",
++        "email": "Enthält eine E-Mail",
++        "awsKey": "Enthält einen AWS-Schlüssel",
++        "thaiPhone": "Thailändische Handynummer"
++      },
++      "check": "Prompt prüfen",
++      "verdict": {
++        "allowed": "Würde zugelassen",
++        "blocked": "Würde blockiert"
++      },
++      "guardDisabled": "Der Prompt-Schutz ist für diese Route deaktiviert, daher würde derzeit nichts blockiert.",
++      "rulesChecked": "{{count}} Regeln geprüft",
++      "matchesTitle": "Zutreffende Regeln",
++      "inputTitle": "Dein Prompt",
++      "emptyInput": "(leer)",
++      "idle": {
++        "title": "Noch nichts geprüft",
++        "body": "Gib einen Prompt ein und wähle eine Route, dann prüfe ihn gegen die aktiven Regeln. Der Prompt wird nie an das Modell gesendet."
++      }
++    },
++    "overview": {
++      "title": "Übersicht",
++      "subtitle": "Jeder Kiro-Prompt läuft über das Gateway. Hier sehen Sie, was durchgelassen und was gestoppt wurde.",
++      "range": {
++        "aria": "Zeitraum",
++        "h1": "1 Std.",
++        "h24": "24 Std.",
++        "d7": "7 T."
++      },
++      "summary": {
++        "line": "<b>{{passed}}</b> von {{total}} Prompts haben alle Schutzregeln bestanden",
++        "blocked": "{{count}} blockiert",
++        "rateLimited": "{{count}} ratenbegrenzt",
++        "ringAria": "{{pct}}% der Prompts haben alle Schutzregeln bestanden"
++      },
++      "kpi": {
++        "requests": "Chat-Anfragen",
++        "blocked": "Blockiert",
++        "blockedPct": "{{pct}}% aller Prompts",
++        "users": "Aktive Nutzer",
++        "latency": "Kiro-Latenz p50 / p95",
++        "latencyNote": "nur abgeschlossene Chats",
++        "protections": "Schutzregeln aktiv",
++        "rulesEnabled": "{{count}} Regeln aktiviert"
++      },
++      "chart": {
++        "title": "Erlaubt vs. blockiert",
++        "hintHourly": "Pro Stunde, Ortszeit",
++        "hintDaily": "Pro Tag, Ortszeit",
++        "empty": "Kein Verkehr in diesem Zeitraum",
++        "emptyBody": "Im ausgewählten Zeitraum ist nichts durch das Gateway gelaufen."
++      },
++      "byRule": {
++        "title": "Blockierungen nach Regel",
++        "allRules": "Alle Regeln",
++        "empty": "Keine Blockierungen in diesem Zeitraum"
++      },
++      "byUser": {
++        "title": "Wer Blockierungen ausgelöst hat",
++        "hint": "Nutzer-IDs sind Token-Hashes",
++        "empty": "Keine Blockierungen in diesem Zeitraum"
++      },
++      "activity": {
++        "title": "Live-Aktivität",
++        "live": "Live",
++        "viewAll": "Alle anzeigen",
++        "empty": "Noch keine Aktivität",
++        "noPrompt": "(Prompt nicht gespeichert)"
++      },
++      "latency": {
++        "title": "Latenz",
++        "hint": "Kiro-Chat vs. KI-Route",
++        "p50": "p50",
++        "p95": "p95",
++        "samples": "{{count}} Messungen"
++      },
++      "changes": {
++        "title": "Letzte Regeländerungen",
++        "manage": "Regeln verwalten",
++        "empty": "Keine Regeländerungen aufgezeichnet"
++      }
++    },
++    "rules": {
++      "pageTitle": "Blockierregeln",
++      "pageSubtitle": "Regeln werden bei jeder Kiro-Eingabe und jeder KI-Routen-Anfrage von oben nach unten geprüft. Der erste Treffer blockiert die Anfrage.",
++      "addRule": "Regel hinzufügen",
++      "listTitle": "Regeln",
++      "searchPlaceholder": "Regeln suchen",
++      "emptyTitle": "Noch keine Regeln",
++      "emptyBody": "Fügen Sie eine Regel hinzu, um Eingaben zu blockieren.",
++      "noMatchTitle": "Keine passenden Regeln",
++      "noMatchBody": "Versuchen Sie eine andere Suche.",
++      "table": {
++        "on": "An",
++        "order": "#",
++        "rule": "Regel",
++        "pattern": "Muster",
++        "appliesTo": "Gilt für",
++        "actions": "Aktionen",
++        "anyCase": "beliebige Groß-/Kleinschreibung",
++        "edit": "Bearbeiten",
++        "moveUp": "Nach oben",
++        "moveDown": "Nach unten",
++        "delete": "Löschen",
++        "toggleAria": "Regel {{label}} aktivieren",
++        "actionsAria": "Aktionen für {{label}}"
++      },
++      "drawer": {
++        "addTitle": "Regel hinzufügen",
++        "editTitle": "Regel bearbeiten",
++        "name": "Name",
++        "namePlaceholder": "z. B. Kreditkartennummer",
++        "nameRequired": "Geben Sie der Regel einen Namen.",
++        "id": "ID",
++        "idFromName": "(aus Name)",
++        "description": "Beschreibung",
++        "descriptionPlaceholder": "Was diese Regel erkennt, in einfachen Worten",
++        "pattern": "Muster",
++        "patternPlaceholder": "Regulärer Ausdruck",
++        "patternHint": "Ein regulärer Ausdruck (PCRE), der gegen den Eingabetext geprüft wird.",
++        "patternRequired": "Geben Sie ein Muster ein.",
++        "checking": "Muster wird geprüft…",
++        "patternValid": "Gültiges Muster",
++        "patternInvalid": "Ungültiges Muster",
++        "caseInsensitive": "Groß-/Kleinschreibung ignorieren",
++        "appliesTo": "Gilt für",
++        "appliesRequired": "Wählen Sie mindestens einen Geltungsbereich.",
++        "enabled": "Aktiviert",
++        "cancel": "Abbrechen",
++        "save": "Regel speichern"
++      },
++      "tryIt": {
++        "title": "Ausprobieren",
++        "sample": "Beispieltext",
++        "samplePlaceholder": "Text einfügen, um Treffer anzuzeigen",
++        "note": "Dies ist eine Browser-Vorschau und kann vom Gateway abweichen: Das Gateway nutzt PCRE, der Browser JavaScript-Ausdrücke. Speichern und anwenden, dann den Live-Tester für das echte Ergebnis verwenden."
++      },
++      "preview": {
++        "label": "Vorschau (Browser-Regex)",
++        "noPreview": "Als Browser-Regex ungültig – keine Vorschau.",
++        "noMatch": "Kein Treffer im Beispiel."
++      },
++      "sticky": {
++        "count_one": "{{count}} nicht gespeicherte Änderung",
++        "count_other": "{{count}} nicht gespeicherte Änderungen",
++        "review": "Prüfen & anwenden",
++        "discard": "Verwerfen",
++        "count": "{{count}} nicht gespeicherte Änderungen"
++      },
++      "review": {
++        "title": "Änderungen prüfen",
++        "summary_one": "{{count}} Änderung wird auf das Gateway angewendet.",
++        "summary_other": "{{count}} Änderungen werden auf das Gateway angewendet.",
++        "ruleChanges": "Regeländerungen",
++        "protectionChanges": "Schutzänderungen",
++        "blockMessageChange": "Blockiernachricht",
++        "movedTo": "Von Position {{from}} nach {{to}} verschoben",
++        "added": "Hinzugefügt",
++        "removed": "Entfernt",
++        "changed": "Geändert",
++        "reordered": "Umsortiert",
++        "apply": "Auf Gateway anwenden",
++        "cancel": "Abbrechen",
++        "reload": "Neu laden",
++        "conflictTitle": "Jemand anderes hat die Regeln geändert",
++        "conflictBody": "Die Regeln wurden seit Beginn Ihrer Bearbeitung auf dem Gateway geändert. Laden Sie neu, um die aktuelle Version zu laden, und wiederholen Sie Ihre Änderung.",
++        "failedTitle": "Änderungen konnten nicht angewendet werden",
++        "summary": "{{count}} Änderungen werden auf das Gateway angewendet."
++      },
++      "protection": {
++        "title": "Schutzmechanismen",
++        "hint": "Gateway-weite Schalter, die zusammen mit den Blockierregeln gelten.",
++        "requests": "Anfragen",
++        "windowSeconds": "Zeitfenster (Sekunden)",
++        "tokens": "Tokens",
++        "blockMessage": "Blockiernachricht",
++        "blockMessageHint": "Wird dem Benutzer bei einer blockierten Anfrage angezeigt (max. 300 Zeichen).",
++        "kiro_prompt_guard": {
++          "name": "Kiro-Eingabeprüfung",
++          "help": "Die Blockierregeln auf Kiro-Chat-Eingaben anwenden."
++        },
++        "kiro_rate_limit": {
++          "name": "Kiro-Ratenbegrenzung",
++          "help": "Begrenzen, wie viele Kiro-Chat-Anfragen ein Benutzer in einem Zeitfenster stellen kann."
++        },
++        "ai_prompt_guard": {
++          "name": "KI-Routen-Eingabeprüfung",
++          "help": "Die Blockierregeln auf /v1/chat/completions-Anfragen anwenden."
++        },
++        "ai_token_budget": {
++          "name": "KI-Token-Budget",
++          "help": "Die Anzahl der Tokens begrenzen, die ein Benutzer in einem Zeitfenster auf der KI-Route verbraucht."
++        }
++      },
++      "field": {
++        "label": "Name",
++        "description": "Beschreibung",
++        "pattern": "Muster",
++        "case_insensitive": "Groß-/Kleinschreibung ignorieren",
++        "applies_to": "Gilt für",
++        "enabled": "Aktiviert",
++        "requests": "Anfragen",
++        "window_seconds": "Zeitfenster (Sekunden)",
++        "tokens": "Tokens"
++      },
++      "history": {
++        "title": "Änderungsverlauf",
++        "hint": "Letzte Änderungen an der Regeldatei.",
++        "emptyTitle": "Noch keine Änderungen",
++        "emptyBody": "Angewendete Änderungen erscheinen hier."
++      },
++      "notify": {
++        "appliedTitle": "Regeln angewendet",
++        "appliedBody": "Als Commit {{commit}} gespeichert."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index 6c86e16..914cccb 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -517,6 +517,283 @@
+         "unknown": "Earlier block (rule not recorded)"
+       },
+       "loadError": "Could not load data"
++    },
++    "activity": {
++      "title": "Activity",
++      "subtitle": "Every prompt the gateway checked, newest first. Updates every 5 seconds.",
++      "showMore": "Show more",
++      "notStored": "Not stored for AI route",
++      "live": {
++        "on": "Live",
++        "paused": "Paused",
++        "pause": "Pause live updates",
++        "resume": "Resume live updates"
++      },
++      "filter": {
++        "search": "Search",
++        "searchPlaceholder": "Search prompts and users",
++        "result": "Result",
++        "resultAll": "All",
++        "path": "Route",
++        "pathAll": "All",
++        "window": "Time window",
++        "window1h": "Last hour",
++        "window24h": "Last 24 hours",
++        "window7d": "Last 7 days",
++        "window30d": "Last 30 days",
++        "allOps": "Include background calls"
++      },
++      "col": {
++        "time": "Time",
++        "result": "Result",
++        "rule": "Rule",
++        "path": "Route",
++        "user": "User",
++        "prompt": "Prompt preview",
++        "latency": "Latency"
++      },
++      "empty": {
++        "title": "No matching activity",
++        "body": "Nothing matched these filters in the selected time window. Try widening the window or clearing the search."
++      },
++      "drawer": {
++        "title": "Request details",
++        "host": "Host",
++        "op": "Operation",
++        "status": "Status code",
++        "model": "Model",
++        "tokens": "Tokens",
++        "message": "User message",
++        "emptyMessage": "No message text.",
++        "testPrompt": "Test this prompt",
++        "contextToggle": "Kiro context (hidden preamble)",
++        "emptyContext": "No hidden context."
++      }
++    },
++    "tester": {
++      "title": "Prompt tester",
++      "subtitle": "Check a prompt against the live rules without sending it to the model.",
++      "path": "Route",
++      "inputLabel": "Prompt",
++      "inputPlaceholder": "Paste or type a prompt to check…",
++      "counter": "{{count}} / {{max}} characters",
++      "examplesLabel": "Try an example:",
++      "example": {
++        "clean": "Clean code question",
++        "email": "Contains an email",
++        "awsKey": "Contains an AWS key",
++        "thaiPhone": "Thai mobile number"
++      },
++      "check": "Check prompt",
++      "verdict": {
++        "allowed": "Would be allowed",
++        "blocked": "Would be blocked"
++      },
++      "guardDisabled": "The prompt guard is turned off for this route, so nothing would be blocked right now.",
++      "rulesChecked": "{{count}} rules checked",
++      "matchesTitle": "Matching rules",
++      "inputTitle": "Your prompt",
++      "emptyInput": "(empty)",
++      "idle": {
++        "title": "Nothing checked yet",
++        "body": "Enter a prompt and choose a route, then check it against the live rules. The prompt is never sent to the model."
++      }
++    },
++    "overview": {
++      "title": "Overview",
++      "subtitle": "Every Kiro prompt passes through the gateway. Here is what it let through and what it stopped.",
++      "range": {
++        "aria": "Time range",
++        "h1": "1h",
++        "h24": "24h",
++        "d7": "7d"
++      },
++      "summary": {
++        "line": "<b>{{passed}}</b> of {{total}} prompts passed every guardrail",
++        "blocked": "{{count}} blocked",
++        "rateLimited": "{{count}} rate limited",
++        "ringAria": "{{pct}}% of prompts passed every guardrail"
++      },
++      "kpi": {
++        "requests": "Chat requests",
++        "blocked": "Blocked",
++        "blockedPct": "{{pct}}% of all prompts",
++        "users": "Active users",
++        "latency": "Kiro latency p50 / p95",
++        "latencyNote": "completed chats only",
++        "protections": "Protections on",
++        "rulesEnabled": "{{count}} rules enabled"
++      },
++      "chart": {
++        "title": "Allowed vs blocked",
++        "hintHourly": "Per hour, local time",
++        "hintDaily": "Per day, local time",
++        "empty": "No traffic in this window",
++        "emptyBody": "Nothing has passed through the gateway in the selected time range."
++      },
++      "byRule": {
++        "title": "Blocks by rule",
++        "allRules": "All rules",
++        "empty": "No blocks in this window"
++      },
++      "byUser": {
++        "title": "Who triggered blocks",
++        "hint": "User ids are token hashes",
++        "empty": "No blocks in this window"
++      },
++      "activity": {
++        "title": "Live activity",
++        "live": "Live",
++        "viewAll": "View all",
++        "empty": "No activity yet",
++        "noPrompt": "(prompt not stored)"
++      },
++      "latency": {
++        "title": "Latency",
++        "hint": "Kiro chat vs AI route",
++        "p50": "p50",
++        "p95": "p95",
++        "samples": "{{count}} samples"
++      },
++      "changes": {
++        "title": "Recent rule changes",
++        "manage": "Manage rules",
++        "empty": "No rule changes recorded"
++      }
++    },
++    "rules": {
++      "pageTitle": "Block rules",
++      "pageSubtitle": "Rules are checked top to bottom on every Kiro prompt and AI-route request. The first match blocks the request.",
++      "addRule": "Add rule",
++      "listTitle": "Rules",
++      "searchPlaceholder": "Search rules",
++      "emptyTitle": "No rules yet",
++      "emptyBody": "Add a rule to start blocking prompts.",
++      "noMatchTitle": "No rules match",
++      "noMatchBody": "Try a different search.",
++      "table": {
++        "on": "On",
++        "order": "#",
++        "rule": "Rule",
++        "pattern": "Pattern",
++        "appliesTo": "Applies to",
++        "actions": "Actions",
++        "anyCase": "any case",
++        "edit": "Edit",
++        "moveUp": "Move up",
++        "moveDown": "Move down",
++        "delete": "Delete",
++        "toggleAria": "Enable rule {{label}}",
++        "actionsAria": "Actions for {{label}}"
++      },
++      "drawer": {
++        "addTitle": "Add rule",
++        "editTitle": "Edit rule",
++        "name": "Name",
++        "namePlaceholder": "e.g. Credit card number",
++        "nameRequired": "Give the rule a name.",
++        "id": "ID",
++        "idFromName": "(from name)",
++        "description": "Description",
++        "descriptionPlaceholder": "What this rule catches, in plain words",
++        "pattern": "Pattern",
++        "patternPlaceholder": "Regular expression",
++        "patternHint": "A regular expression (PCRE) checked against the prompt text.",
++        "patternRequired": "Enter a pattern.",
++        "checking": "Checking pattern…",
++        "patternValid": "Valid pattern",
++        "patternInvalid": "Invalid pattern",
++        "caseInsensitive": "Case-insensitive",
++        "appliesTo": "Applies to",
++        "appliesRequired": "Choose at least one place the rule applies to.",
++        "enabled": "Enabled",
++        "cancel": "Cancel",
++        "save": "Save rule"
++      },
++      "tryIt": {
++        "title": "Try it",
++        "sample": "Sample text",
++        "samplePlaceholder": "Paste text to preview matches",
++        "note": "This is a browser preview and may differ from the gateway: the gateway uses PCRE, the browser uses JavaScript regular expressions. Save and apply, then use the live tester for the real result."
++      },
++      "preview": {
++        "label": "Preview (browser regex)",
++        "noPreview": "Not valid as a browser regex — no preview.",
++        "noMatch": "No match in the sample."
++      },
++      "sticky": {
++        "count_one": "{{count}} unsaved change",
++        "count_other": "{{count}} unsaved changes",
++        "review": "Review & apply",
++        "discard": "Discard",
++        "count": "{{count}} unsaved changes"
++      },
++      "review": {
++        "title": "Review changes",
++        "summary_one": "{{count}} change will be applied to the gateway.",
++        "summary_other": "{{count}} changes will be applied to the gateway.",
++        "ruleChanges": "Rule changes",
++        "protectionChanges": "Protection changes",
++        "blockMessageChange": "Block message",
++        "movedTo": "Moved from position {{from}} to {{to}}",
++        "added": "Added",
++        "removed": "Removed",
++        "changed": "Changed",
++        "reordered": "Reordered",
++        "apply": "Apply to gateway",
++        "cancel": "Cancel",
++        "reload": "Reload",
++        "conflictTitle": "Someone else changed the rules",
++        "conflictBody": "The rules changed on the gateway since you started editing. Reload to load the current version, then redo your change.",
++        "failedTitle": "Could not apply changes",
++        "summary": "{{count}} changes will be applied to the gateway."
++      },
++      "protection": {
++        "title": "Protections",
++        "hint": "Gateway-wide switches applied alongside the block rules.",
++        "requests": "Requests",
++        "windowSeconds": "Window (seconds)",
++        "tokens": "Tokens",
++        "blockMessage": "Block message",
++        "blockMessageHint": "Shown to the user when a request is blocked (max 300 characters).",
++        "kiro_prompt_guard": {
++          "name": "Kiro prompt check",
++          "help": "Apply the block rules to Kiro chat prompts."
++        },
++        "kiro_rate_limit": {
++          "name": "Kiro rate limit",
++          "help": "Limit how many Kiro chat requests a user can make in a time window."
++        },
++        "ai_prompt_guard": {
++          "name": "AI route prompt check",
++          "help": "Apply the block rules to /v1/chat/completions requests."
++        },
++        "ai_token_budget": {
++          "name": "AI token budget",
++          "help": "Cap the number of tokens a user can spend on the AI route in a time window."
++        }
++      },
++      "field": {
++        "label": "Name",
++        "description": "Description",
++        "pattern": "Pattern",
++        "case_insensitive": "Case-insensitive",
++        "applies_to": "Applies to",
++        "enabled": "Enabled",
++        "requests": "Requests",
++        "window_seconds": "Window (seconds)",
++        "tokens": "Tokens"
++      },
++      "history": {
++        "title": "Change history",
++        "hint": "Recent changes to the rules file.",
++        "emptyTitle": "No changes yet",
++        "emptyBody": "Applied changes will appear here."
++      },
++      "notify": {
++        "appliedTitle": "Rules applied",
++        "appliedBody": "Saved as commit {{commit}}."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index bccc6bb..1237765 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -517,6 +517,283 @@
+         "unknown": "Bloqueo anterior (regla no registrada)"
+       },
+       "loadError": "No se pudieron cargar los datos"
++    },
++    "activity": {
++      "title": "Actividad",
++      "subtitle": "Cada prompt que la puerta de enlace revisó, el más reciente primero. Se actualiza cada 5 segundos.",
++      "showMore": "Mostrar más",
++      "notStored": "No almacenado para la ruta de IA",
++      "live": {
++        "on": "En vivo",
++        "paused": "En pausa",
++        "pause": "Pausar actualizaciones en vivo",
++        "resume": "Reanudar actualizaciones en vivo"
++      },
++      "filter": {
++        "search": "Buscar",
++        "searchPlaceholder": "Buscar prompts y usuarios",
++        "result": "Resultado",
++        "resultAll": "Todos",
++        "path": "Ruta",
++        "pathAll": "Todas",
++        "window": "Ventana de tiempo",
++        "window1h": "Última hora",
++        "window24h": "Últimas 24 horas",
++        "window7d": "Últimos 7 días",
++        "window30d": "Últimos 30 días",
++        "allOps": "Incluir llamadas en segundo plano"
++      },
++      "col": {
++        "time": "Hora",
++        "result": "Resultado",
++        "rule": "Regla",
++        "path": "Ruta",
++        "user": "Usuario",
++        "prompt": "Vista previa del prompt",
++        "latency": "Latencia"
++      },
++      "empty": {
++        "title": "Sin actividad coincidente",
++        "body": "Nada coincidió con estos filtros en la ventana seleccionada. Prueba a ampliar la ventana o borrar la búsqueda."
++      },
++      "drawer": {
++        "title": "Detalles de la solicitud",
++        "host": "Host",
++        "op": "Operación",
++        "status": "Código de estado",
++        "model": "Modelo",
++        "tokens": "Tokens",
++        "message": "Mensaje del usuario",
++        "emptyMessage": "Sin texto de mensaje.",
++        "testPrompt": "Probar este prompt",
++        "contextToggle": "Contexto de Kiro (preámbulo oculto)",
++        "emptyContext": "Sin contexto oculto."
++      }
++    },
++    "tester": {
++      "title": "Probador de prompts",
++      "subtitle": "Comprueba un prompt contra las reglas activas sin enviarlo al modelo.",
++      "path": "Ruta",
++      "inputLabel": "Prompt",
++      "inputPlaceholder": "Pega o escribe un prompt para comprobar…",
++      "counter": "{{count}} / {{max}} caracteres",
++      "examplesLabel": "Prueba un ejemplo:",
++      "example": {
++        "clean": "Pregunta de código limpio",
++        "email": "Contiene un correo",
++        "awsKey": "Contiene una clave de AWS",
++        "thaiPhone": "Móvil tailandés"
++      },
++      "check": "Comprobar prompt",
++      "verdict": {
++        "allowed": "Se permitiría",
++        "blocked": "Se bloquearía"
++      },
++      "guardDisabled": "La protección de prompts está desactivada para esta ruta, así que ahora mismo no se bloquearía nada.",
++      "rulesChecked": "{{count}} reglas comprobadas",
++      "matchesTitle": "Reglas coincidentes",
++      "inputTitle": "Tu prompt",
++      "emptyInput": "(vacío)",
++      "idle": {
++        "title": "Aún no se ha comprobado nada",
++        "body": "Introduce un prompt y elige una ruta, luego compruébalo contra las reglas activas. El prompt nunca se envía al modelo."
++      }
++    },
++    "overview": {
++      "title": "Resumen",
++      "subtitle": "Cada prompt de Kiro pasa por la puerta de enlace. Esto es lo que dejó pasar y lo que detuvo.",
++      "range": {
++        "aria": "Intervalo de tiempo",
++        "h1": "1 h",
++        "h24": "24 h",
++        "d7": "7 d"
++      },
++      "summary": {
++        "line": "<b>{{passed}}</b> de {{total}} prompts superaron todas las protecciones",
++        "blocked": "{{count}} bloqueados",
++        "rateLimited": "{{count}} con límite de tasa",
++        "ringAria": "{{pct}}% de los prompts superaron todas las protecciones"
++      },
++      "kpi": {
++        "requests": "Solicitudes de chat",
++        "blocked": "Bloqueados",
++        "blockedPct": "{{pct}}% de todos los prompts",
++        "users": "Usuarios activos",
++        "latency": "Latencia de Kiro p50 / p95",
++        "latencyNote": "solo chats completados",
++        "protections": "Protecciones activas",
++        "rulesEnabled": "{{count}} reglas habilitadas"
++      },
++      "chart": {
++        "title": "Permitidos vs. bloqueados",
++        "hintHourly": "Por hora, hora local",
++        "hintDaily": "Por día, hora local",
++        "empty": "Sin tráfico en este intervalo",
++        "emptyBody": "No ha pasado nada por la puerta de enlace en el intervalo seleccionado."
++      },
++      "byRule": {
++        "title": "Bloqueos por regla",
++        "allRules": "Todas las reglas",
++        "empty": "Sin bloqueos en este intervalo"
++      },
++      "byUser": {
++        "title": "Quién activó los bloqueos",
++        "hint": "Los ID de usuario son hashes de token",
++        "empty": "Sin bloqueos en este intervalo"
++      },
++      "activity": {
++        "title": "Actividad en vivo",
++        "live": "En vivo",
++        "viewAll": "Ver todo",
++        "empty": "Aún no hay actividad",
++        "noPrompt": "(prompt no almacenado)"
++      },
++      "latency": {
++        "title": "Latencia",
++        "hint": "Chat de Kiro vs. ruta de IA",
++        "p50": "p50",
++        "p95": "p95",
++        "samples": "{{count}} muestras"
++      },
++      "changes": {
++        "title": "Cambios recientes de reglas",
++        "manage": "Gestionar reglas",
++        "empty": "No se registraron cambios de reglas"
++      }
++    },
++    "rules": {
++      "pageTitle": "Reglas de bloqueo",
++      "pageSubtitle": "Las reglas se comprueban de arriba abajo en cada mensaje de Kiro y cada solicitud de la ruta de IA. La primera coincidencia bloquea la solicitud.",
++      "addRule": "Añadir regla",
++      "listTitle": "Reglas",
++      "searchPlaceholder": "Buscar reglas",
++      "emptyTitle": "Aún no hay reglas",
++      "emptyBody": "Añade una regla para empezar a bloquear mensajes.",
++      "noMatchTitle": "Ninguna regla coincide",
++      "noMatchBody": "Prueba otra búsqueda.",
++      "table": {
++        "on": "Act.",
++        "order": "#",
++        "rule": "Regla",
++        "pattern": "Patrón",
++        "appliesTo": "Se aplica a",
++        "actions": "Acciones",
++        "anyCase": "cualquier mayús./minús.",
++        "edit": "Editar",
++        "moveUp": "Subir",
++        "moveDown": "Bajar",
++        "delete": "Eliminar",
++        "toggleAria": "Activar la regla {{label}}",
++        "actionsAria": "Acciones para {{label}}"
++      },
++      "drawer": {
++        "addTitle": "Añadir regla",
++        "editTitle": "Editar regla",
++        "name": "Nombre",
++        "namePlaceholder": "p. ej. Número de tarjeta de crédito",
++        "nameRequired": "Da un nombre a la regla.",
++        "id": "ID",
++        "idFromName": "(del nombre)",
++        "description": "Descripción",
++        "descriptionPlaceholder": "Qué detecta esta regla, en palabras sencillas",
++        "pattern": "Patrón",
++        "patternPlaceholder": "Expresión regular",
++        "patternHint": "Una expresión regular (PCRE) comprobada contra el texto del mensaje.",
++        "patternRequired": "Introduce un patrón.",
++        "checking": "Comprobando el patrón…",
++        "patternValid": "Patrón válido",
++        "patternInvalid": "Patrón no válido",
++        "caseInsensitive": "No distinguir mayúsculas/minúsculas",
++        "appliesTo": "Se aplica a",
++        "appliesRequired": "Elige al menos un lugar donde se aplica la regla.",
++        "enabled": "Activada",
++        "cancel": "Cancelar",
++        "save": "Guardar regla"
++      },
++      "tryIt": {
++        "title": "Probar",
++        "sample": "Texto de ejemplo",
++        "samplePlaceholder": "Pega texto para previsualizar coincidencias",
++        "note": "Esta es una vista previa del navegador y puede diferir del gateway: el gateway usa PCRE y el navegador usa expresiones regulares de JavaScript. Guarda y aplica, luego usa el probador en vivo para el resultado real."
++      },
++      "preview": {
++        "label": "Vista previa (regex del navegador)",
++        "noPreview": "No es válida como regex del navegador: sin vista previa.",
++        "noMatch": "Sin coincidencias en el ejemplo."
++      },
++      "sticky": {
++        "count_one": "{{count}} cambio sin guardar",
++        "count_other": "{{count}} cambios sin guardar",
++        "review": "Revisar y aplicar",
++        "discard": "Descartar",
++        "count": "{{count}} cambios sin guardar"
++      },
++      "review": {
++        "title": "Revisar cambios",
++        "summary_one": "Se aplicará {{count}} cambio al gateway.",
++        "summary_other": "Se aplicarán {{count}} cambios al gateway.",
++        "ruleChanges": "Cambios en reglas",
++        "protectionChanges": "Cambios en protecciones",
++        "blockMessageChange": "Mensaje de bloqueo",
++        "movedTo": "Movida de la posición {{from}} a la {{to}}",
++        "added": "Añadida",
++        "removed": "Eliminada",
++        "changed": "Cambiada",
++        "reordered": "Reordenada",
++        "apply": "Aplicar al gateway",
++        "cancel": "Cancelar",
++        "reload": "Recargar",
++        "conflictTitle": "Otra persona cambió las reglas",
++        "conflictBody": "Las reglas cambiaron en el gateway desde que empezaste a editar. Recarga para cargar la versión actual y vuelve a hacer tu cambio.",
++        "failedTitle": "No se pudieron aplicar los cambios",
++        "summary": "Se aplicarán {{count}} cambios al gateway."
++      },
++      "protection": {
++        "title": "Protecciones",
++        "hint": "Interruptores a nivel de gateway aplicados junto con las reglas de bloqueo.",
++        "requests": "Solicitudes",
++        "windowSeconds": "Ventana (segundos)",
++        "tokens": "Tokens",
++        "blockMessage": "Mensaje de bloqueo",
++        "blockMessageHint": "Se muestra al usuario cuando se bloquea una solicitud (máx. 300 caracteres).",
++        "kiro_prompt_guard": {
++          "name": "Comprobación de mensajes de Kiro",
++          "help": "Aplicar las reglas de bloqueo a los mensajes de chat de Kiro."
++        },
++        "kiro_rate_limit": {
++          "name": "Límite de frecuencia de Kiro",
++          "help": "Limitar cuántas solicitudes de chat de Kiro puede hacer un usuario en una ventana de tiempo."
++        },
++        "ai_prompt_guard": {
++          "name": "Comprobación de mensajes de la ruta de IA",
++          "help": "Aplicar las reglas de bloqueo a las solicitudes de /v1/chat/completions."
++        },
++        "ai_token_budget": {
++          "name": "Presupuesto de tokens de IA",
++          "help": "Limitar el número de tokens que un usuario puede gastar en la ruta de IA en una ventana de tiempo."
++        }
++      },
++      "field": {
++        "label": "Nombre",
++        "description": "Descripción",
++        "pattern": "Patrón",
++        "case_insensitive": "No distinguir mayúsculas/minúsculas",
++        "applies_to": "Se aplica a",
++        "enabled": "Activada",
++        "requests": "Solicitudes",
++        "window_seconds": "Ventana (segundos)",
++        "tokens": "Tokens"
++      },
++      "history": {
++        "title": "Historial de cambios",
++        "hint": "Cambios recientes en el archivo de reglas.",
++        "emptyTitle": "Aún no hay cambios",
++        "emptyBody": "Los cambios aplicados aparecerán aquí."
++      },
++      "notify": {
++        "appliedTitle": "Reglas aplicadas",
++        "appliedBody": "Guardado como commit {{commit}}."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 2ca3ea9..4d68bdf 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -517,6 +517,283 @@
+         "unknown": "Önceki engelleme (kural kaydedilmedi)"
+       },
+       "loadError": "Veriler yüklenemedi"
++    },
++    "activity": {
++      "title": "Etkinlik",
++      "subtitle": "Ağ geçidinin denetlediği her istem, en yeni önce. Her 5 saniyede bir güncellenir.",
++      "showMore": "Daha fazla göster",
++      "notStored": "AI rotası için saklanmıyor",
++      "live": {
++        "on": "Canlı",
++        "paused": "Duraklatıldı",
++        "pause": "Canlı güncellemeleri duraklat",
++        "resume": "Canlı güncellemeleri sürdür"
++      },
++      "filter": {
++        "search": "Ara",
++        "searchPlaceholder": "İstemleri ve kullanıcıları ara",
++        "result": "Sonuç",
++        "resultAll": "Tümü",
++        "path": "Rota",
++        "pathAll": "Tümü",
++        "window": "Zaman aralığı",
++        "window1h": "Son saat",
++        "window24h": "Son 24 saat",
++        "window7d": "Son 7 gün",
++        "window30d": "Son 30 gün",
++        "allOps": "Arka plan çağrılarını dahil et"
++      },
++      "col": {
++        "time": "Zaman",
++        "result": "Sonuç",
++        "rule": "Kural",
++        "path": "Rota",
++        "user": "Kullanıcı",
++        "prompt": "İstem önizlemesi",
++        "latency": "Gecikme"
++      },
++      "empty": {
++        "title": "Eşleşen etkinlik yok",
++        "body": "Seçili zaman aralığında bu filtrelerle hiçbir şey eşleşmedi. Aralığı genişletmeyi veya aramayı temizlemeyi deneyin."
++      },
++      "drawer": {
++        "title": "İstek ayrıntıları",
++        "host": "Ana bilgisayar",
++        "op": "İşlem",
++        "status": "Durum kodu",
++        "model": "Model",
++        "tokens": "Belirteçler",
++        "message": "Kullanıcı mesajı",
++        "emptyMessage": "Mesaj metni yok.",
++        "testPrompt": "Bu istemi test et",
++        "contextToggle": "Kiro bağlamı (gizli önbilgi)",
++        "emptyContext": "Gizli bağlam yok."
++      }
++    },
++    "tester": {
++      "title": "İstem test aracı",
++      "subtitle": "Bir istemi modele göndermeden canlı kurallara karşı denetleyin.",
++      "path": "Rota",
++      "inputLabel": "İstem",
++      "inputPlaceholder": "Denetlenecek bir istem yapıştırın veya yazın…",
++      "counter": "{{count}} / {{max}} karakter",
++      "examplesLabel": "Bir örnek deneyin:",
++      "example": {
++        "clean": "Temiz kod sorusu",
++        "email": "E-posta içerir",
++        "awsKey": "AWS anahtarı içerir",
++        "thaiPhone": "Tayland cep numarası"
++      },
++      "check": "İstemi denetle",
++      "verdict": {
++        "allowed": "İzin verilirdi",
++        "blocked": "Engellenirdi"
++      },
++      "guardDisabled": "Bu rota için istem koruması kapalı, bu nedenle şu anda hiçbir şey engellenmez.",
++      "rulesChecked": "{{count}} kural denetlendi",
++      "matchesTitle": "Eşleşen kurallar",
++      "inputTitle": "İsteminiz",
++      "emptyInput": "(boş)",
++      "idle": {
++        "title": "Henüz bir şey denetlenmedi",
++        "body": "Bir istem girin ve bir rota seçin, ardından canlı kurallara karşı denetleyin. İstem asla modele gönderilmez."
++      }
++    },
++    "overview": {
++      "title": "Genel Bakış",
++      "subtitle": "Her Kiro istemi ağ geçidinden geçer. İşte neyin geçtiği ve neyin durdurulduğu.",
++      "range": {
++        "aria": "Zaman aralığı",
++        "h1": "1sa",
++        "h24": "24sa",
++        "d7": "7g"
++      },
++      "summary": {
++        "line": "{{total}} istemden <b>{{passed}}</b> tanesi tüm korumaları geçti",
++        "blocked": "{{count}} engellendi",
++        "rateLimited": "{{count}} hız sınırlı",
++        "ringAria": "İstemlerin %{{pct}} tüm korumaları geçti"
++      },
++      "kpi": {
++        "requests": "Sohbet istekleri",
++        "blocked": "Engellenen",
++        "blockedPct": "tüm istemlerin %{{pct}}",
++        "users": "Etkin kullanıcılar",
++        "latency": "Kiro gecikmesi p50 / p95",
++        "latencyNote": "yalnızca tamamlanan sohbetler",
++        "protections": "Etkin korumalar",
++        "rulesEnabled": "{{count}} kural etkin"
++      },
++      "chart": {
++        "title": "İzin verilen vs engellenen",
++        "hintHourly": "Saatlik, yerel saat",
++        "hintDaily": "Günlük, yerel saat",
++        "empty": "Bu aralıkta trafik yok",
++        "emptyBody": "Seçilen zaman aralığında ağ geçidinden hiçbir şey geçmedi."
++      },
++      "byRule": {
++        "title": "Kurala göre engellemeler",
++        "allRules": "Tüm kurallar",
++        "empty": "Bu aralıkta engelleme yok"
++      },
++      "byUser": {
++        "title": "Engellemeleri kim tetikledi",
++        "hint": "Kullanıcı kimlikleri token karmalarıdır",
++        "empty": "Bu aralıkta engelleme yok"
++      },
++      "activity": {
++        "title": "Canlı etkinlik",
++        "live": "Canlı",
++        "viewAll": "Tümünü gör",
++        "empty": "Henüz etkinlik yok",
++        "noPrompt": "(istem saklanmadı)"
++      },
++      "latency": {
++        "title": "Gecikme",
++        "hint": "Kiro sohbeti vs YZ rotası",
++        "p50": "p50",
++        "p95": "p95",
++        "samples": "{{count}} örnek"
++      },
++      "changes": {
++        "title": "Son kural değişiklikleri",
++        "manage": "Kuralları yönet",
++        "empty": "Kaydedilen kural değişikliği yok"
++      }
++    },
++    "rules": {
++      "pageTitle": "Engelleme kuralları",
++      "pageSubtitle": "Kurallar her Kiro isteminde ve yapay zekâ rotası isteğinde yukarıdan aşağıya denetlenir. İlk eşleşme isteği engeller.",
++      "addRule": "Kural ekle",
++      "listTitle": "Kurallar",
++      "searchPlaceholder": "Kurallarda ara",
++      "emptyTitle": "Henüz kural yok",
++      "emptyBody": "İstemleri engellemeye başlamak için bir kural ekleyin.",
++      "noMatchTitle": "Eşleşen kural yok",
++      "noMatchBody": "Farklı bir arama deneyin.",
++      "table": {
++        "on": "Açık",
++        "order": "#",
++        "rule": "Kural",
++        "pattern": "Desen",
++        "appliesTo": "Uygulanır",
++        "actions": "Eylemler",
++        "anyCase": "büyük/küçük harf farkı yok",
++        "edit": "Düzenle",
++        "moveUp": "Yukarı taşı",
++        "moveDown": "Aşağı taşı",
++        "delete": "Sil",
++        "toggleAria": "{{label}} kuralını etkinleştir",
++        "actionsAria": "{{label}} için eylemler"
++      },
++      "drawer": {
++        "addTitle": "Kural ekle",
++        "editTitle": "Kuralı düzenle",
++        "name": "Ad",
++        "namePlaceholder": "örn. Kredi kartı numarası",
++        "nameRequired": "Kurala bir ad verin.",
++        "id": "Kimlik",
++        "idFromName": "(addan)",
++        "description": "Açıklama",
++        "descriptionPlaceholder": "Bu kuralın neyi yakaladığı, sade bir dille",
++        "pattern": "Desen",
++        "patternPlaceholder": "Düzenli ifade",
++        "patternHint": "İstem metnine karşı denetlenen bir düzenli ifade (PCRE).",
++        "patternRequired": "Bir desen girin.",
++        "checking": "Desen denetleniyor…",
++        "patternValid": "Geçerli desen",
++        "patternInvalid": "Geçersiz desen",
++        "caseInsensitive": "Büyük/küçük harf duyarsız",
++        "appliesTo": "Uygulanır",
++        "appliesRequired": "Kuralın uygulanacağı en az bir yer seçin.",
++        "enabled": "Etkin",
++        "cancel": "İptal",
++        "save": "Kuralı kaydet"
++      },
++      "tryIt": {
++        "title": "Deneyin",
++        "sample": "Örnek metin",
++        "samplePlaceholder": "Eşleşmeleri önizlemek için metin yapıştırın",
++        "note": "Bu bir tarayıcı önizlemesidir ve ağ geçidinden farklı olabilir: ağ geçidi PCRE, tarayıcı JavaScript düzenli ifadeleri kullanır. Kaydedip uygulayın, ardından gerçek sonuç için canlı test aracını kullanın."
++      },
++      "preview": {
++        "label": "Önizleme (tarayıcı regex'i)",
++        "noPreview": "Tarayıcı regex'i olarak geçersiz — önizleme yok.",
++        "noMatch": "Örnekte eşleşme yok."
++      },
++      "sticky": {
++        "count_one": "{{count}} kaydedilmemiş değişiklik",
++        "count_other": "{{count}} kaydedilmemiş değişiklik",
++        "review": "İncele ve uygula",
++        "discard": "Vazgeç",
++        "count": "{{count}} kaydedilmemiş değişiklik"
++      },
++      "review": {
++        "title": "Değişiklikleri incele",
++        "summary_one": "Ağ geçidine {{count}} değişiklik uygulanacak.",
++        "summary_other": "Ağ geçidine {{count}} değişiklik uygulanacak.",
++        "ruleChanges": "Kural değişiklikleri",
++        "protectionChanges": "Koruma değişiklikleri",
++        "blockMessageChange": "Engelleme mesajı",
++        "movedTo": "{{from}}. konumdan {{to}}. konuma taşındı",
++        "added": "Eklendi",
++        "removed": "Kaldırıldı",
++        "changed": "Değişti",
++        "reordered": "Yeniden sıralandı",
++        "apply": "Ağ geçidine uygula",
++        "cancel": "İptal",
++        "reload": "Yeniden yükle",
++        "conflictTitle": "Kuralları başka biri değiştirdi",
++        "conflictBody": "Düzenlemeye başladığınızdan beri kurallar ağ geçidinde değişti. Güncel sürümü yüklemek için yeniden yükleyin ve değişikliğinizi tekrarlayın.",
++        "failedTitle": "Değişiklikler uygulanamadı",
++        "summary": "Ağ geçidine {{count}} değişiklik uygulanacak."
++      },
++      "protection": {
++        "title": "Korumalar",
++        "hint": "Engelleme kurallarıyla birlikte uygulanan ağ geçidi genelindeki anahtarlar.",
++        "requests": "İstek sayısı",
++        "windowSeconds": "Pencere (saniye)",
++        "tokens": "Jeton",
++        "blockMessage": "Engelleme mesajı",
++        "blockMessageHint": "Bir istek engellendiğinde kullanıcıya gösterilir (en fazla 300 karakter).",
++        "kiro_prompt_guard": {
++          "name": "Kiro istem denetimi",
++          "help": "Engelleme kurallarını Kiro sohbet istemlerine uygula."
++        },
++        "kiro_rate_limit": {
++          "name": "Kiro hız sınırı",
++          "help": "Bir kullanıcının bir zaman penceresinde kaç Kiro sohbet isteği yapabileceğini sınırla."
++        },
++        "ai_prompt_guard": {
++          "name": "Yapay zekâ rotası istem denetimi",
++          "help": "Engelleme kurallarını /v1/chat/completions isteklerine uygula."
++        },
++        "ai_token_budget": {
++          "name": "Yapay zekâ jeton bütçesi",
++          "help": "Bir kullanıcının yapay zekâ rotasında bir zaman penceresinde harcayabileceği jeton sayısını sınırla."
++        }
++      },
++      "field": {
++        "label": "Ad",
++        "description": "Açıklama",
++        "pattern": "Desen",
++        "case_insensitive": "Büyük/küçük harf duyarsız",
++        "applies_to": "Uygulanır",
++        "enabled": "Etkin",
++        "requests": "İstek sayısı",
++        "window_seconds": "Pencere (saniye)",
++        "tokens": "Jeton"
++      },
++      "history": {
++        "title": "Değişiklik geçmişi",
++        "hint": "Kural dosyasındaki son değişiklikler.",
++        "emptyTitle": "Henüz değişiklik yok",
++        "emptyBody": "Uygulanan değişiklikler burada görünür."
++      },
++      "notify": {
++        "appliedTitle": "Kurallar uygulandı",
++        "appliedBody": "{{commit}} işlemesi olarak kaydedildi."
++      }
+     }
+   }
+ }
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index 5d0b64c..fda3033 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -517,6 +517,283 @@
+         "unknown": "早期拦截（未记录规则）"
+       },
+       "loadError": "无法加载数据"
++    },
++    "activity": {
++      "title": "活动",
++      "subtitle": "网关检查过的每个提示，最新的在前。每 5 秒更新一次。",
++      "showMore": "显示更多",
++      "notStored": "AI 路由不保存",
++      "live": {
++        "on": "实时",
++        "paused": "已暂停",
++        "pause": "暂停实时更新",
++        "resume": "恢复实时更新"
++      },
++      "filter": {
++        "search": "搜索",
++        "searchPlaceholder": "搜索提示和用户",
++        "result": "结果",
++        "resultAll": "全部",
++        "path": "路由",
++        "pathAll": "全部",
++        "window": "时间范围",
++        "window1h": "最近 1 小时",
++        "window24h": "最近 24 小时",
++        "window7d": "最近 7 天",
++        "window30d": "最近 30 天",
++        "allOps": "包含后台调用"
++      },
++      "col": {
++        "time": "时间",
++        "result": "结果",
++        "rule": "规则",
++        "path": "路由",
++        "user": "用户",
++        "prompt": "提示预览",
++        "latency": "延迟"
++      },
++      "empty": {
++        "title": "没有匹配的活动",
++        "body": "在所选时间范围内没有内容匹配这些筛选条件。请尝试扩大时间范围或清除搜索。"
++      },
++      "drawer": {
++        "title": "请求详情",
++        "host": "主机",
++        "op": "操作",
++        "status": "状态码",
++        "model": "模型",
++        "tokens": "令牌数",
++        "message": "用户消息",
++        "emptyMessage": "无消息文本。",
++        "testPrompt": "测试此提示",
++        "contextToggle": "Kiro 上下文（隐藏前言）",
++        "emptyContext": "无隐藏上下文。"
++      }
++    },
++    "tester": {
++      "title": "提示测试器",
++      "subtitle": "在不发送到模型的情况下，用实时规则检查提示。",
++      "path": "路由",
++      "inputLabel": "提示",
++      "inputPlaceholder": "粘贴或输入要检查的提示…",
++      "counter": "{{count}} / {{max}} 个字符",
++      "examplesLabel": "试试示例：",
++      "example": {
++        "clean": "整洁的代码问题",
++        "email": "包含电子邮件",
++        "awsKey": "包含 AWS 密钥",
++        "thaiPhone": "泰国手机号"
++      },
++      "check": "检查提示",
++      "verdict": {
++        "allowed": "将被允许",
++        "blocked": "将被拦截"
++      },
++      "guardDisabled": "此路由的提示防护已关闭，因此目前不会拦截任何内容。",
++      "rulesChecked": "已检查 {{count}} 条规则",
++      "matchesTitle": "匹配的规则",
++      "inputTitle": "你的提示",
++      "emptyInput": "（空）",
++      "idle": {
++        "title": "尚未检查任何内容",
++        "body": "输入提示并选择路由，然后用实时规则进行检查。提示绝不会发送到模型。"
++      }
++    },
++    "overview": {
++      "title": "概览",
++      "subtitle": "每个 Kiro 提示都经过网关。以下是它放行和拦截的内容。",
++      "range": {
++        "aria": "时间范围",
++        "h1": "1 小时",
++        "h24": "24 小时",
++        "d7": "7 天"
++      },
++      "summary": {
++        "line": "{{total}} 条提示中有 <b>{{passed}}</b> 条通过了所有防护规则",
++        "blocked": "已拦截 {{count}} 条",
++        "rateLimited": "已限流 {{count}} 条",
++        "ringAria": "{{pct}}% 的提示通过了所有防护规则"
++      },
++      "kpi": {
++        "requests": "聊天请求",
++        "blocked": "已拦截",
++        "blockedPct": "占所有提示的 {{pct}}%",
++        "users": "活跃用户",
++        "latency": "Kiro 延迟 p50 / p95",
++        "latencyNote": "仅限已完成的聊天",
++        "protections": "已启用防护",
++        "rulesEnabled": "已启用 {{count}} 条规则"
++      },
++      "chart": {
++        "title": "放行与拦截",
++        "hintHourly": "每小时，本地时间",
++        "hintDaily": "每天，本地时间",
++        "empty": "此时间段内无流量",
++        "emptyBody": "在所选时间范围内没有任何请求经过网关。"
++      },
++      "byRule": {
++        "title": "按规则拦截",
++        "allRules": "全部规则",
++        "empty": "此时间段内无拦截"
++      },
++      "byUser": {
++        "title": "谁触发了拦截",
++        "hint": "用户 ID 为令牌哈希",
++        "empty": "此时间段内无拦截"
++      },
++      "activity": {
++        "title": "实时活动",
++        "live": "实时",
++        "viewAll": "查看全部",
++        "empty": "暂无活动",
++        "noPrompt": "（未存储提示）"
++      },
++      "latency": {
++        "title": "延迟",
++        "hint": "Kiro 聊天与 AI 路由对比",
++        "p50": "p50",
++        "p95": "p95",
++        "samples": "{{count}} 个样本"
++      },
++      "changes": {
++        "title": "最近的规则变更",
++        "manage": "管理规则",
++        "empty": "未记录规则变更"
++      }
++    },
++    "rules": {
++      "pageTitle": "拦截规则",
++      "pageSubtitle": "每次 Kiro 提示和 AI 路由请求都会自上而下检查规则，第一个匹配项将拦截该请求。",
++      "addRule": "添加规则",
++      "listTitle": "规则",
++      "searchPlaceholder": "搜索规则",
++      "emptyTitle": "暂无规则",
++      "emptyBody": "添加一条规则以开始拦截提示。",
++      "noMatchTitle": "没有匹配的规则",
++      "noMatchBody": "请尝试其他搜索。",
++      "table": {
++        "on": "启用",
++        "order": "#",
++        "rule": "规则",
++        "pattern": "模式",
++        "appliesTo": "适用于",
++        "actions": "操作",
++        "anyCase": "忽略大小写",
++        "edit": "编辑",
++        "moveUp": "上移",
++        "moveDown": "下移",
++        "delete": "删除",
++        "toggleAria": "启用规则 {{label}}",
++        "actionsAria": "{{label}} 的操作"
++      },
++      "drawer": {
++        "addTitle": "添加规则",
++        "editTitle": "编辑规则",
++        "name": "名称",
++        "namePlaceholder": "例如 信用卡号",
++        "nameRequired": "请为规则命名。",
++        "id": "ID",
++        "idFromName": "（根据名称生成）",
++        "description": "描述",
++        "descriptionPlaceholder": "用通俗的话说明此规则拦截什么",
++        "pattern": "模式",
++        "patternPlaceholder": "正则表达式",
++        "patternHint": "针对提示文本检查的正则表达式（PCRE）。",
++        "patternRequired": "请输入模式。",
++        "checking": "正在检查模式……",
++        "patternValid": "模式有效",
++        "patternInvalid": "模式无效",
++        "caseInsensitive": "忽略大小写",
++        "appliesTo": "适用于",
++        "appliesRequired": "请至少选择一个规则适用的位置。",
++        "enabled": "已启用",
++        "cancel": "取消",
++        "save": "保存规则"
++      },
++      "tryIt": {
++        "title": "试一试",
++        "sample": "示例文本",
++        "samplePlaceholder": "粘贴文本以预览匹配",
++        "note": "这是浏览器预览，可能与网关不同：网关使用 PCRE，浏览器使用 JavaScript 正则表达式。保存并应用后，请使用实时测试器查看真实结果。"
++      },
++      "preview": {
++        "label": "预览（浏览器正则）",
++        "noPreview": "不是有效的浏览器正则——无法预览。",
++        "noMatch": "示例中无匹配。"
++      },
++      "sticky": {
++        "count_one": "{{count}} 项未保存的更改",
++        "count_other": "{{count}} 项未保存的更改",
++        "review": "审阅并应用",
++        "discard": "放弃",
++        "count": "{{count}} 项未保存的更改"
++      },
++      "review": {
++        "title": "审阅更改",
++        "summary_one": "将有 {{count}} 项更改应用到网关。",
++        "summary_other": "将有 {{count}} 项更改应用到网关。",
++        "ruleChanges": "规则更改",
++        "protectionChanges": "防护更改",
++        "blockMessageChange": "拦截消息",
++        "movedTo": "从第 {{from}} 位移动到第 {{to}} 位",
++        "added": "已添加",
++        "removed": "已删除",
++        "changed": "已更改",
++        "reordered": "已重排",
++        "apply": "应用到网关",
++        "cancel": "取消",
++        "reload": "重新加载",
++        "conflictTitle": "其他人更改了规则",
++        "conflictBody": "自您开始编辑以来，网关上的规则已更改。请重新加载以载入当前版本，然后重做您的更改。",
++        "failedTitle": "无法应用更改",
++        "summary": "将有 {{count}} 项更改应用到网关。"
++      },
++      "protection": {
++        "title": "防护",
++        "hint": "与拦截规则一同生效的网关级开关。",
++        "requests": "请求数",
++        "windowSeconds": "时间窗口（秒）",
++        "tokens": "令牌",
++        "blockMessage": "拦截消息",
++        "blockMessageHint": "请求被拦截时向用户显示（最多 300 个字符）。",
++        "kiro_prompt_guard": {
++          "name": "Kiro 提示检查",
++          "help": "将拦截规则应用于 Kiro 聊天提示。"
++        },
++        "kiro_rate_limit": {
++          "name": "Kiro 速率限制",
++          "help": "限制用户在一个时间窗口内可发起的 Kiro 聊天请求数量。"
++        },
++        "ai_prompt_guard": {
++          "name": "AI 路由提示检查",
++          "help": "将拦截规则应用于 /v1/chat/completions 请求。"
++        },
++        "ai_token_budget": {
++          "name": "AI 令牌预算",
++          "help": "限制用户在一个时间窗口内可在 AI 路由上消耗的令牌数量。"
++        }
++      },
++      "field": {
++        "label": "名称",
++        "description": "描述",
++        "pattern": "模式",
++        "case_insensitive": "忽略大小写",
++        "applies_to": "适用于",
++        "enabled": "已启用",
++        "requests": "请求数",
++        "window_seconds": "时间窗口（秒）",
++        "tokens": "令牌"
++      },
++      "history": {
++        "title": "更改历史",
++        "hint": "规则文件的最近更改。",
++        "emptyTitle": "暂无更改",
++        "emptyBody": "应用的更改将显示在此处。"
++      },
++      "notify": {
++        "appliedTitle": "规则已应用",
++        "appliedBody": "已保存为提交 {{commit}}。"
++      }
+     }
+   }
+ }
+diff --git a/src/routes/guardrails/activity.tsx b/src/routes/guardrails/activity.tsx
+index e8ce30b..fa9ee10 100644
+--- a/src/routes/guardrails/activity.tsx
++++ b/src/routes/guardrails/activity.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { ActivityPage } from '@/kiro/guardrails/activity/ActivityPage';
+ 
+ export const Route = createFileRoute('/guardrails/activity')({
+-  component: () => <ComingSoon page="activity" />,
++  component: ActivityPage,
+ });
+diff --git a/src/routes/guardrails/rules/index.tsx b/src/routes/guardrails/rules/index.tsx
+index 8d3a330..05fb41e 100644
+--- a/src/routes/guardrails/rules/index.tsx
++++ b/src/routes/guardrails/rules/index.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import RulesPage from '@/kiro/guardrails/rules/RulesPage';
+ 
+ export const Route = createFileRoute('/guardrails/rules/')({
+-  component: () => <ComingSoon page="rules" />,
++  component: RulesPage,
+ });
+diff --git a/src/routes/guardrails/tester.tsx b/src/routes/guardrails/tester.tsx
+index 085201e..b6e0303 100644
+--- a/src/routes/guardrails/tester.tsx
++++ b/src/routes/guardrails/tester.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { TesterPage } from '@/kiro/guardrails/tester/TesterPage';
+ 
+ export const Route = createFileRoute('/guardrails/tester')({
+-  component: () => <ComingSoon page="tester" />,
++  component: TesterPage,
+ });
+diff --git a/src/routes/overview.tsx b/src/routes/overview.tsx
+index 7233e2e..be0481c 100644
+--- a/src/routes/overview.tsx
++++ b/src/routes/overview.tsx
+@@ -16,8 +16,8 @@
+  */
+ import { createFileRoute } from '@tanstack/react-router';
+ 
+-import { ComingSoon } from '@/kiro/shell/Page';
++import { OverviewPage } from '@/kiro/guardrails/overview/OverviewPage';
+ 
+ export const Route = createFileRoute('/overview')({
+-  component: () => <ComingSoon page="overview" />,
++  component: OverviewPage,
+ });

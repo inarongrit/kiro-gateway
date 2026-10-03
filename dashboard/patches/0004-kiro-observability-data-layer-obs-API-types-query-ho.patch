@@ -1,0 +1,162 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 14:41:55 +0000
+Subject: [PATCH] kiro: observability data layer (obs API types, query hooks,
+ Grafana links)
+
+---
+ src/kiro/observability/api.ts | 145 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 145 insertions(+)
+ create mode 100644 src/kiro/observability/api.ts
+
+diff --git a/src/kiro/observability/api.ts b/src/kiro/observability/api.ts
+new file mode 100644
+index 0000000..fda010b
+--- /dev/null
++++ b/src/kiro/observability/api.ts
+@@ -0,0 +1,145 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/**
++ * Typed access to the console's /api/obs/* endpoints (fixed server-side Prometheus, Loki and
++ * Tempo queries). Shapes mirror console/app/observe.py.
++ */
++import { keepPreviousData, useQuery } from '@tanstack/react-query';
++
++import { consoleApi } from '@/kiro/api';
++
++/** Chart-ready time series: rows carry `t` (epoch ms) plus one numeric key per series name. */
++export type Series = { series: string[]; rows: ({ t: number } & Record<string, number>)[] };
++export type Pct = { p50: number | null; p95: number | null };
++
++export type Traffic = {
++  hours: number;
++  totals: { total: number | null; errors_5xx: number | null; blocked_403: number | null; limited_429: number | null };
++  per_minute_by_route: Series;
++  per_minute_by_code: Series;
++  bandwidth_bytes_per_s: Series;
++  routes: { route: string; id: string; requests: number }[];
++  codes: { code: string; requests: number }[];
++};
++
++export type Latency = {
++  hours: number;
++  kiro_chat_ms: Pct;
++  gateway_overhead_ms: Pct;
++  upstream_p95_ms: number | null;
++  p50_by_route: Series;
++  p95_by_route: Series;
++  p95_gateway_vs_upstream: Series;
++  routes: { id: string; route: string; p50?: number | null; p95?: number | null; requests?: number | null }[];
++};
++
++export type Usage = {
++  hours: number;
++  chats_by_path: Series;
++  kiro_chats: number;
++  ai_calls: number;
++  active_users: number;
++  users: { user: string; kiro: number; ai: number; blocked: number; total: number }[];
++  ai_tokens: number;
++  tokens_by_consumer: { consumer: string; model: string; prompt: number; completion: number }[];
++  tokens_over_time: ({ t: number } & Record<string, number>)[];
++};
++
++export type TraceKind = 'chat' | 'all' | 'slow' | 'errors';
++export type TraceSummary = {
++  trace_id: string;
++  name: string;
++  start_ms: number;
++  duration_ms: number;
++  host: string;
++  method: string;
++  status: number | null;
++};
++export type TraceList = { hours: number; kind: TraceKind; traces: TraceSummary[] };
++
++export type Span = {
++  id: string;
++  parent: string;
++  name: string;
++  kind: string;
++  status: string;
++  attributes: Record<string, string | number | boolean | null>;
++  offset_ms: number;
++  duration_ms: number;
++};
++export type TraceDetail = {
++  trace_id: string;
++  duration_ms: number;
++  root: string;
++  attributes: Span['attributes'];
++  spans: Span[];
++};
++
++/** Monitoring charts refresh every 15 s (Prometheus scrapes every 15 s). */
++export const OBS_MS = 15000;
++
++const live = { refetchInterval: OBS_MS, placeholderData: keepPreviousData } as const;
++
++export const useTraffic = (hours: number) =>
++  useQuery({
++    queryKey: ['kiro', 'obs', 'traffic', hours],
++    queryFn: () => consoleApi<Traffic>('GET', `/api/obs/traffic?hours=${hours}`),
++    ...live,
++  });
++
++export const useLatency = (hours: number) =>
++  useQuery({
++    queryKey: ['kiro', 'obs', 'latency', hours],
++    queryFn: () => consoleApi<Latency>('GET', `/api/obs/latency?hours=${hours}`),
++    ...live,
++  });
++
++export const useUsage = (hours: number) =>
++  useQuery({
++    queryKey: ['kiro', 'obs', 'usage', hours],
++    queryFn: () => consoleApi<Usage>('GET', `/api/obs/usage?hours=${hours}`),
++    ...live,
++  });
++
++export const useTraces = (hours: number, kind: TraceKind, limit = 100) =>
++  useQuery({
++    queryKey: ['kiro', 'obs', 'traces', hours, kind, limit],
++    queryFn: () => consoleApi<TraceList>('GET', `/api/obs/traces?hours=${hours}&kind=${kind}&limit=${limit}`),
++    ...live,
++  });
++
++export const useTrace = (id: string | null) =>
++  useQuery({
++    queryKey: ['kiro', 'obs', 'trace', id],
++    queryFn: () => consoleApi<TraceDetail>('GET', `/api/obs/traces/${encodeURIComponent(id!)}`),
++    enabled: !!id,
++    staleTime: Infinity, // a finished trace never changes
++  });
++
++/** Grafana dashboards provisioned by monitoring/grafana/build_dashboards.py (served at /grafana/). */
++export const grafana = {
++  traffic: '/grafana/d/kiro-gateway-overview',
++  latency: '/grafana/d/kiro-gateway-overview',
++  usage: '/grafana/d/kiro-gateway-usage',
++  traces: '/grafana/d/kiro-gateway-logs',
++  /** Open one trace in Grafana Explore (Tempo datasource uid "tempo"). */
++  trace: (id: string) =>
++    `/grafana/explore?schemaVersion=1&panes=${encodeURIComponent(
++      JSON.stringify({ t: { datasource: 'tempo', queries: [{ refId: 'A', datasource: { type: 'tempo', uid: 'tempo' }, queryType: 'traceql', query: id }], range: { from: 'now-7d', to: 'now' } } })
++    )}`,
++  withRange: (url: string, hours: number) => `${url}?from=now-${hours}h&to=now`,
++};

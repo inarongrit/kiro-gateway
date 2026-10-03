@@ -1,0 +1,604 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 15:55:11 +0000
+Subject: [PATCH] kiro: accessibility + mobile polish (WCAG AA contrast,
+ close-button names, keyboard rows, compact mobile lists)
+
+---
+ src/kiro/ThemedProvider.tsx                   | 44 +++++++++++++
+ src/kiro/guardrails/activity/ActivityPage.tsx | 64 +++++++++++++++----
+ src/kiro/guardrails/rules/RulesTable.tsx      | 14 ++--
+ .../observability/latency/LatencyPage.tsx     |  8 +--
+ src/kiro/observability/traces/TracesPage.tsx  | 56 +++++++++-------
+ src/kiro/shell/shell.module.css               |  2 +-
+ src/kiro/theme.ts                             | 34 ++++++++++
+ src/locales/de/common.json                    |  6 +-
+ src/locales/en/common.json                    |  6 +-
+ src/locales/es/common.json                    |  6 +-
+ src/locales/tr/common.json                    |  6 +-
+ src/locales/zh/common.json                    |  6 +-
+ src/main.tsx                                  | 13 +---
+ 13 files changed, 204 insertions(+), 61 deletions(-)
+ create mode 100644 src/kiro/ThemedProvider.tsx
+
+diff --git a/src/kiro/ThemedProvider.tsx b/src/kiro/ThemedProvider.tsx
+new file mode 100644
+index 0000000..133f9f2
+--- /dev/null
++++ b/src/kiro/ThemedProvider.tsx
+@@ -0,0 +1,44 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createTheme, MantineProvider, mergeThemeOverrides } from '@mantine/core';
++import { type ReactNode, useMemo } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { portalCssVariables, portalTheme } from './theme';
++
++/** Portal theme plus translated accessible names for icon-only close buttons. */
++export const ThemedProvider = ({ children }: { children: ReactNode }) => {
++  const { t } = useTranslation();
++  const theme = useMemo(() => {
++    const closeButtonProps = { 'aria-label': t('kiro.common.close') };
++    return mergeThemeOverrides(
++      portalTheme,
++      createTheme({
++        components: {
++          Modal: { defaultProps: { closeButtonProps } },
++          Drawer: { defaultProps: { closeButtonProps } },
++          Notification: { defaultProps: { closeButtonProps } },
++        },
++      })
++    );
++  }, [t]);
++  return (
++    <MantineProvider theme={theme} defaultColorScheme="dark" cssVariablesResolver={portalCssVariables}>
++      {children}
++    </MantineProvider>
++  );
++};
+diff --git a/src/kiro/guardrails/activity/ActivityPage.tsx b/src/kiro/guardrails/activity/ActivityPage.tsx
+index 2f532bf..f20ba06 100644
+--- a/src/kiro/guardrails/activity/ActivityPage.tsx
++++ b/src/kiro/guardrails/activity/ActivityPage.tsx
+@@ -23,13 +23,14 @@ import {
+   Group,
+   SegmentedControl,
+   Select,
++  Stack,
+   Table,
+   Text,
+   TextInput,
+   Tooltip,
+   UnstyledButton,
+ } from '@mantine/core';
+-import { useDebouncedValue } from '@mantine/hooks';
++import { useDebouncedValue, useMediaQuery } from '@mantine/hooks';
+ import { useState } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -54,6 +55,8 @@ export const ActivityPage = () => {
+   const { t, i18n } = useTranslation();
+   const ruleLabel = useRuleLabel();
+   const timeAgo = useTimeAgo();
++  // Below the sm breakpoint a 7-column table needs sideways scrolling; show cards instead.
++  const compact = useMediaQuery('(max-width: 48em)');
+ 
+   const [search, setSearch] = useState('');
+   const [debouncedSearch] = useDebouncedValue(search, 300);
+@@ -169,6 +172,45 @@ export const ActivityPage = () => {
+     if (!events.length)
+       return <EmptyState title={t('kiro.activity.empty.title')} body={t('kiro.activity.empty.body')} />;
+ 
++    const preview = (ev: AuditEvent) =>
++      ev.path === 'ai' ? (
++        <Text size="sm" c="dimmed" fs="italic" truncate>
++          {t('kiro.activity.notStored')}
++        </Text>
++      ) : (
++        <Text size="sm" truncate>
++          {userText(ev.prompt).replace(/\s+/g, ' ').trim() || '–'}
++        </Text>
++      );
++
++    if (compact)
++      return (
++        <Stack gap={0}>
++          {events.map((ev, i) => (
++            <UnstyledButton
++              key={`${ev.ts}-${ev.user}-${i}`}
++              onClick={() => setSelected(ev)}
++              py="sm"
++              style={i > 0 ? { borderTop: '1px solid var(--mantine-color-default-border)' } : undefined}
++            >
++              <Group justify="space-between" wrap="nowrap" gap="xs" mb={4}>
++                <Group gap={6} wrap="nowrap">
++                  <ResultBadge result={ev.result} />
++                  <PathBadge path={ev.path} />
++                </Group>
++                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
++                  {timeAgo(ev.ts)}
++                </Text>
++              </Group>
++              {preview(ev)}
++              <Text size="xs" c="dimmed" truncate mt={2}>
++                {[ruleLabel(ev.rule), ev.user, fmtMs(ev.latency_ms)].filter(Boolean).join(' · ')}
++              </Text>
++            </UnstyledButton>
++          ))}
++        </Stack>
++      );
++
+     return (
+       <Table.ScrollContainer minWidth={960}>
+         <Table striped highlightOnHover stickyHeader>
+@@ -188,6 +230,14 @@ export const ActivityPage = () => {
+               <Table.Tr
+                 key={`${ev.ts}-${ev.user}-${i}`}
+                 onClick={() => setSelected(ev)}
++                onKeyDown={(e) => {
++                  if (e.key === 'Enter' || e.key === ' ') {
++                    e.preventDefault();
++                    setSelected(ev);
++                  }
++                }}
++                tabIndex={0}
++                aria-label={t('kiro.activity.openDetails')}
+                 style={{ cursor: 'pointer' }}
+               >
+                 <Table.Td>
+@@ -209,17 +259,7 @@ export const ActivityPage = () => {
+                     {ev.user}
+                   </Text>
+                 </Table.Td>
+-                <Table.Td style={{ maxWidth: 360 }}>
+-                  {ev.path === 'ai' ? (
+-                    <Text size="sm" c="dimmed" fs="italic" truncate>
+-                      {t('kiro.activity.notStored')}
+-                    </Text>
+-                  ) : (
+-                    <Text size="sm" truncate>
+-                      {userText(ev.prompt).replace(/\s+/g, ' ').trim() || '–'}
+-                    </Text>
+-                  )}
+-                </Table.Td>
++                <Table.Td style={{ maxWidth: 360 }}>{preview(ev)}</Table.Td>
+                 <Table.Td>
+                   <Text size="sm">{fmtMs(ev.latency_ms)}</Text>
+                 </Table.Td>
+diff --git a/src/kiro/guardrails/rules/RulesTable.tsx b/src/kiro/guardrails/rules/RulesTable.tsx
+index 7b6cd17..1a8e6a7 100644
+--- a/src/kiro/guardrails/rules/RulesTable.tsx
++++ b/src/kiro/guardrails/rules/RulesTable.tsx
+@@ -39,15 +39,15 @@ export type RulesTableProps = {
+ export const RulesTable: FC<RulesTableProps> = ({ rules, onToggle, onEdit, onMove, onDelete }) => {
+   const { t } = useTranslation();
+   return (
+-    <Table.ScrollContainer minWidth={720}>
++    <Table.ScrollContainer minWidth={0}>
+       <Table verticalSpacing="sm" highlightOnHover>
+         <Table.Thead>
+           <Table.Tr>
+             <Table.Th w={60}>{t('kiro.rules.table.on')}</Table.Th>
+-            <Table.Th w={56}>{t('kiro.rules.table.order')}</Table.Th>
++            <Table.Th w={56} visibleFrom="sm">{t('kiro.rules.table.order')}</Table.Th>
+             <Table.Th>{t('kiro.rules.table.rule')}</Table.Th>
+-            <Table.Th>{t('kiro.rules.table.pattern')}</Table.Th>
+-            <Table.Th>{t('kiro.rules.table.appliesTo')}</Table.Th>
++            <Table.Th visibleFrom="sm">{t('kiro.rules.table.pattern')}</Table.Th>
++            <Table.Th visibleFrom="md">{t('kiro.rules.table.appliesTo')}</Table.Th>
+             <Table.Th w={56} ta="right">
+               {t('kiro.rules.table.actions')}
+             </Table.Th>
+@@ -64,7 +64,7 @@ export const RulesTable: FC<RulesTableProps> = ({ rules, onToggle, onEdit, onMov
+                   onChange={(e) => onToggle(r.id, e.currentTarget.checked)}
+                 />
+               </Table.Td>
+-              <Table.Td>
++              <Table.Td visibleFrom="sm">
+                 <Text size="sm" c="dimmed">
+                   {i + 1}
+                 </Text>
+@@ -89,14 +89,14 @@ export const RulesTable: FC<RulesTableProps> = ({ rules, onToggle, onEdit, onMov
+                   )}
+                 </Stack>
+               </Table.Td>
+-              <Table.Td>
++              <Table.Td visibleFrom="sm">
+                 <Tooltip label={r.pattern} multiline maw={420} withArrow>
+                   <Code fz="xs" style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
+                     {r.pattern}
+                   </Code>
+                 </Tooltip>
+               </Table.Td>
+-              <Table.Td>
++              <Table.Td visibleFrom="md">
+                 <Group gap={4}>
+                   {r.applies_to.map((p) => (
+                     <PathBadge key={p} path={p} />
+diff --git a/src/kiro/observability/latency/LatencyPage.tsx b/src/kiro/observability/latency/LatencyPage.tsx
+index 26eeac5..61416fd 100644
+--- a/src/kiro/observability/latency/LatencyPage.tsx
++++ b/src/kiro/observability/latency/LatencyPage.tsx
+@@ -139,11 +139,11 @@ export const LatencyPage = () => {
+           ) : (
+             <Stack gap="sm">
+               <Progress.Root size={28} radius="sm">
+-                <Progress.Section value={gwShare} color="teal.5">
+-                  <Progress.Label>{t('kiro.latency.split.gateway')}</Progress.Label>
++                <Progress.Section value={gwShare} color="teal.5" aria-label={t('kiro.latency.split.gateway')}>
++                  <Progress.Label c="dark.9">{t('kiro.latency.split.gateway')}</Progress.Label>
+                 </Progress.Section>
+-                <Progress.Section value={upShare} color="orange.5">
+-                  <Progress.Label>{t('kiro.latency.split.upstream')}</Progress.Label>
++                <Progress.Section value={upShare} color="orange.5" aria-label={t('kiro.latency.split.upstream')}>
++                  <Progress.Label c="dark.9">{t('kiro.latency.split.upstream')}</Progress.Label>
+                 </Progress.Section>
+               </Progress.Root>
+               <Group justify="space-between">
+diff --git a/src/kiro/observability/traces/TracesPage.tsx b/src/kiro/observability/traces/TracesPage.tsx
+index 78e6508..ad3083b 100644
+--- a/src/kiro/observability/traces/TracesPage.tsx
++++ b/src/kiro/observability/traces/TracesPage.tsx
+@@ -15,7 +15,7 @@
+  * limitations under the License.
+  */
+ /** The "Traces" page: a filterable list of recent requests, each opening a waterfall detail. */
+-import { Badge, Box, Group, SegmentedControl, Skeleton, Stack, Table, Text, Tooltip } from '@mantine/core';
++import { Badge, Box, Group, ScrollArea, SegmentedControl, Skeleton, Stack, Table, Text, Tooltip } from '@mantine/core';
+ import { useMemo, useState } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -78,21 +78,21 @@ export const TracesPage = () => {
+       <SectionCard
+         title={t('kiro.traces.list.title')}
+         hint={t('kiro.traces.list.hint')}
+-        action={
+-          <SegmentedControl
+-            size="sm"
+-            value={kind}
+-            onChange={(v) => setKind(v as TraceKind)}
+-            aria-label={t('kiro.traces.filter.aria')}
+-            data={[
+-              { value: 'chat', label: t('kiro.traces.filter.chat') },
+-              { value: 'all', label: t('kiro.traces.filter.all') },
+-              { value: 'slow', label: t('kiro.traces.filter.slow') },
+-              { value: 'errors', label: t('kiro.traces.filter.errors') },
+-            ]}
+-          />
+-        }
+       >
++        <ScrollArea type="never" mb="md">
++            <SegmentedControl
++              size="sm"
++              value={kind}
++              onChange={(v) => setKind(v as TraceKind)}
++              aria-label={t('kiro.traces.filter.aria')}
++              data={[
++                { value: 'chat', label: t('kiro.traces.filter.chat') },
++                { value: 'all', label: t('kiro.traces.filter.all') },
++                { value: 'slow', label: t('kiro.traces.filter.slow') },
++                { value: 'errors', label: t('kiro.traces.filter.errors') },
++              ]}
++            />
++        </ScrollArea>
+         {traces.isPending ? (
+           <Skeleton height={320} radius="sm" />
+         ) : traces.error ? (
+@@ -100,15 +100,15 @@ export const TracesPage = () => {
+         ) : rows.length === 0 ? (
+           <EmptyState title={t('kiro.traces.list.empty')} body={t('kiro.traces.list.emptyBody')} />
+         ) : (
+-          <Table.ScrollContainer minWidth={720}>
++          <Table.ScrollContainer minWidth={0}>
+             <Table highlightOnHover verticalSpacing="xs">
+               <Table.Thead>
+                 <Table.Tr>
+-                  <Table.Th w={110}>{t('kiro.traces.col.time')}</Table.Th>
++                  <Table.Th w={110} visibleFrom="sm">{t('kiro.traces.col.time')}</Table.Th>
+                   <Table.Th>{t('kiro.traces.col.request')}</Table.Th>
+-                  <Table.Th>{t('kiro.traces.col.host')}</Table.Th>
++                  <Table.Th visibleFrom="md">{t('kiro.traces.col.host')}</Table.Th>
+                   <Table.Th w={80}>{t('kiro.traces.col.status')}</Table.Th>
+-                  <Table.Th w={200}>{t('kiro.traces.col.duration')}</Table.Th>
++                  <Table.Th w={{ base: 110, md: 200 }}>{t('kiro.traces.col.duration')}</Table.Th>
+                 </Table.Tr>
+               </Table.Thead>
+               <Table.Tbody>
+@@ -120,8 +120,16 @@ export const TracesPage = () => {
+                       key={r.trace_id}
+                       style={{ cursor: 'pointer' }}
+                       onClick={() => setSelected(r.trace_id)}
++                      onKeyDown={(e) => {
++                        if (e.key === 'Enter' || e.key === ' ') {
++                          e.preventDefault();
++                          setSelected(r.trace_id);
++                        }
++                      }}
++                      tabIndex={0}
++                      aria-label={t('kiro.activity.openDetails')}
+                     >
+-                      <Table.Td>
++                      <Table.Td visibleFrom="sm">
+                         <Tooltip label={fmtTime(new Date(r.start_ms).toISOString(), i18n.language)} withArrow openDelay={300}>
+                           <Text size="sm" c="dimmed">
+                             {relative(r.start_ms)}
+@@ -129,11 +137,15 @@ export const TracesPage = () => {
+                         </Tooltip>
+                       </Table.Td>
+                       <Table.Td>
+-                        <Text span ff="monospace" size="sm">
++                        <Text span ff="monospace" size="sm" style={{ wordBreak: 'break-all' }}>
+                           {r.name.startsWith(r.method) ? r.name : `${r.method} ${r.name}`.trim()}
+                         </Text>
++                        <Text size="xs" c="dimmed" hiddenFrom="sm">
++                          {relative(r.start_ms)}
++                          {host ? ` · ${host.label}` : ''}
++                        </Text>
+                       </Table.Td>
+-                      <Table.Td>
++                      <Table.Td visibleFrom="md">
+                         {host ? (
+                           <Stack gap={0}>
+                             <Text size="sm">{host.label}</Text>
+diff --git a/src/kiro/shell/shell.module.css b/src/kiro/shell/shell.module.css
+index 0eb03fc..eaf5a00 100644
+--- a/src/kiro/shell/shell.module.css
++++ b/src/kiro/shell/shell.module.css
+@@ -75,7 +75,7 @@
+ 
+   &[data-active] {
+     background: var(--kg-brand-soft);
+-    color: var(--mantine-primary-color-filled);
++    color: var(--mantine-primary-color-light-color);
+     font-weight: 550;
+   }
+ 
+diff --git a/src/kiro/theme.ts b/src/kiro/theme.ts
+index 09e195e..5c8cde5 100644
+--- a/src/kiro/theme.ts
++++ b/src/kiro/theme.ts
+@@ -41,6 +41,7 @@ export const portalTheme = createTheme({
+   primaryColor: 'indigo',
+   colors: { indigo, dark },
+   primaryShade: { light: 6, dark: 4 },
++  autoContrast: true, // filled buttons/badges pick dark or light text by background luminance (WCAG AA)
+   defaultGradient: { from: 'indigo.5', to: 'violet.6', deg: 135 },
+   fontFamily:
+     '"Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
+@@ -73,6 +74,30 @@ export const portalTheme = createTheme({
+   },
+ });
+ 
++/** Text-bearing variant colours for light mode (see the light block below). */
++const deepText: Record<string, string> = {
++  red: 'var(--mantine-color-red-9)',
++  pink: 'var(--mantine-color-pink-9)',
++  grape: 'var(--mantine-color-grape-9)',
++  violet: 'var(--mantine-color-violet-9)',
++  indigo: 'var(--mantine-color-indigo-7)',
++  blue: 'var(--mantine-color-blue-9)',
++  cyan: '#0a6b7a',
++  teal: '#087259',
++  green: '#1f7a1f',
++  lime: '#4d6b0a',
++  yellow: '#7a5200',
++  orange: '#9a4400',
++  gray: 'var(--mantine-color-gray-7)',
++};
++const lightTextColors = Object.fromEntries(
++  Object.entries(deepText).flatMap(([c, v]) => [
++    [`--mantine-color-${c}-light-color`, v],
++    [`--mantine-color-${c}-outline`, v],
++    [`--mantine-color-${c}-text`, v],
++  ])
++);
++
+ /** Portal tokens as CSS variables (--kg-*) for both schemes; used by global.css and new pages. */
+ export const portalCssVariables: CSSVariablesResolver = () => ({
+   variables: {
+@@ -83,6 +108,7 @@ export const portalCssVariables: CSSVariablesResolver = () => ({
+   },
+   light: {
+     '--mantine-color-body': '#F6F7FB',
++    '--mantine-color-dimmed': '#5B6478', // 5.6:1 on canvas; Mantine's gray.6 default is 3.1:1
+     '--kg-canvas': '#F6F7FB',
+     '--kg-surface': '#FFFFFF',
+     '--kg-raised': '#F0F2F8',
+@@ -96,10 +122,18 @@ export const portalCssVariables: CSSVariablesResolver = () => ({
+     '--kg-info': '#0B84C6',
+     '--kg-shadow': '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10)',
+     '--kg-header-bg': 'rgba(246,247,251,.82)',
++    // WCAG AA in light mode: Mantine's light/outline/text variants use shade 6, which is only
++    // 1.7-3.5:1 on their tinted backgrounds. Use the darkest shades (or a deeper hex for the
++    // yellow/orange families, whose shade 9 is still too light) for text-bearing variants.
++    ...lightTextColors,
+   },
+   dark: {
+     '--mantine-color-body': '#0B0E14',
+     '--kg-canvas': '#0B0E14',
++    // Primary filled buttons: shade 4 (#7C8CFF) with white text is 3:1; shade 6 is 5.5:1.
++    // Light/outline variants keep the brighter shade 4.
++    '--mantine-color-indigo-filled': 'var(--mantine-color-indigo-6)',
++    '--mantine-color-indigo-filled-hover': 'var(--mantine-color-indigo-7)',
+     '--kg-surface': '#121722',
+     '--kg-raised': '#1A2130',
+     '--kg-border': '#232B3B',
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 9691e7e..87aaedb 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -568,7 +568,8 @@
+         "testPrompt": "Diesen Prompt testen",
+         "contextToggle": "Kiro-Kontext (verborgene Präambel)",
+         "emptyContext": "Kein verborgener Kontext."
+-      }
++      },
++      "openDetails": "Anfragedetails öffnen"
+     },
+     "tester": {
+       "title": "Prompt-Tester",
+@@ -1025,6 +1026,9 @@
+         "goneTitle": "Dieser Trace ist nicht mehr verfügbar",
+         "goneBody": "Traces laufen nach einer Aufbewahrungsfrist ab. Versuche eine neuere Anfrage zu öffnen."
+       }
++    },
++    "common": {
++      "close": "Schließen"
+     }
+   }
+ }
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index 1def005..f46d4ef 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -568,7 +568,8 @@
+         "testPrompt": "Test this prompt",
+         "contextToggle": "Kiro context (hidden preamble)",
+         "emptyContext": "No hidden context."
+-      }
++      },
++      "openDetails": "Open request details"
+     },
+     "tester": {
+       "title": "Prompt tester",
+@@ -1025,6 +1026,9 @@
+         "goneTitle": "This trace is no longer available",
+         "goneBody": "Traces age out after a retention window. Try opening a more recent request."
+       }
++    },
++    "common": {
++      "close": "Close"
+     }
+   }
+ }
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index ff9518a..0cf2e92 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -568,7 +568,8 @@
+         "testPrompt": "Probar este prompt",
+         "contextToggle": "Contexto de Kiro (preámbulo oculto)",
+         "emptyContext": "Sin contexto oculto."
+-      }
++      },
++      "openDetails": "Abrir detalles de la solicitud"
+     },
+     "tester": {
+       "title": "Probador de prompts",
+@@ -1025,6 +1026,9 @@
+         "goneTitle": "Esta traza ya no está disponible",
+         "goneBody": "Las trazas caducan tras un periodo de retención. Prueba a abrir una solicitud más reciente."
+       }
++    },
++    "common": {
++      "close": "Cerrar"
+     }
+   }
+ }
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 46a30bb..e421914 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -568,7 +568,8 @@
+         "testPrompt": "Bu istemi test et",
+         "contextToggle": "Kiro bağlamı (gizli önbilgi)",
+         "emptyContext": "Gizli bağlam yok."
+-      }
++      },
++      "openDetails": "İstek ayrıntılarını aç"
+     },
+     "tester": {
+       "title": "İstem test aracı",
+@@ -1025,6 +1026,9 @@
+         "goneTitle": "Bu iz artık mevcut değil",
+         "goneBody": "İzler bir saklama süresinden sonra zaman aşımına uğrar. Daha yeni bir isteği açmayı deneyin."
+       }
++    },
++    "common": {
++      "close": "Kapat"
+     }
+   }
+ }
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index 2108241..6851884 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -568,7 +568,8 @@
+         "testPrompt": "测试此提示",
+         "contextToggle": "Kiro 上下文（隐藏前言）",
+         "emptyContext": "无隐藏上下文。"
+-      }
++      },
++      "openDetails": "打开请求详情"
+     },
+     "tester": {
+       "title": "提示测试器",
+@@ -1025,6 +1026,9 @@
+         "goneTitle": "此追踪已不可用",
+         "goneBody": "追踪在保留期后会过期。请尝试打开更近期的请求。"
+       }
++    },
++    "common": {
++      "close": "关闭"
+     }
+   }
+ }
+diff --git a/src/main.tsx b/src/main.tsx
+index f83f2c5..9f07bc5 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -22,7 +22,6 @@ import '@fontsource-variable/jetbrains-mono';
+ import './styles/global.css';
+ import './kiro/portal.css';
+ 
+-import { MantineProvider } from '@mantine/core';
+ import { ModalsProvider } from '@mantine/modals';
+ import { Notifications } from '@mantine/notifications';
+ import { QueryClientProvider } from '@tanstack/react-query';
+@@ -31,9 +30,7 @@ import { StrictMode } from 'react';
+ import ReactDOM from 'react-dom/client';
+ 
+ import { queryClient, router } from './config/global';
+-import { portalCssVariables, portalTheme } from './kiro/theme';
+-
+-const theme = portalTheme;
++import { ThemedProvider } from './kiro/ThemedProvider';
+ 
+ // Render the app
+ const rootElement = document.getElementById('root')!;
+@@ -41,18 +38,14 @@ if (!rootElement.innerHTML) {
+   const root = ReactDOM.createRoot(rootElement);
+   root.render(
+     <StrictMode>
+-      <MantineProvider
+-        theme={theme}
+-        defaultColorScheme="dark"
+-        cssVariablesResolver={portalCssVariables}
+-      >
++      <ThemedProvider>
+         <Notifications position="top-right" autoClose={5000} limit={5} />
+         <QueryClientProvider client={queryClient}>
+           <ModalsProvider>
+             <RouterProvider router={router} />
+           </ModalsProvider>
+         </QueryClientProvider>
+-      </MantineProvider>
++      </ThemedProvider>
+     </StrictMode>
+   );
+ }

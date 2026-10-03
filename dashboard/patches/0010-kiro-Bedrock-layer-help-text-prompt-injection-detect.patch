@@ -1,0 +1,79 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Sat, 3 Oct 2026 00:22:57 +0000
+Subject: [PATCH] kiro: Bedrock layer help text - prompt-injection detection
+ off
+
+---
+ src/locales/de/common.json | 2 +-
+ src/locales/en/common.json | 2 +-
+ src/locales/es/common.json | 2 +-
+ src/locales/tr/common.json | 2 +-
+ src/locales/zh/common.json | 2 +-
+ 5 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index c6a89a5..0b54009 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -789,7 +789,7 @@
+         },
+         "kiro_ml_guard": {
+           "name": "Bedrock Guardrails (zweite Ebene)",
+-          "help": "Nach den Sperrregeln prüft Amazon Bedrock den Prompt auf personenbezogene Daten (Namen, Adressen, Telefonnummern, Bankdaten, Passwörter), Prompt-Angriffe und Datenabfluss. Kostet etwa 0,5 s pro Kiro-Chat."
++          "help": "Nach den Sperrregeln prüft Amazon Bedrock den Prompt auf personenbezogene Daten (Namen, Adressen, Telefonnummern, Bankdaten, Passwörter, Schlüssel) und auf Anfragen, Unternehmensdaten nach außen zu bringen. Die Erkennung von Prompt-Injection ist aus (sie sperrte normale Programmier-Prompts). Kostet etwa 0,5 s pro Kiro-Chat."
+         },
+         "timeoutMs": "Zeitlimit (ms)",
+         "failMode": "Wenn Bedrock langsam oder nicht erreichbar ist",
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index 5008450..f6aa5dd 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -789,7 +789,7 @@
+         },
+         "kiro_ml_guard": {
+           "name": "Bedrock Guardrails (second layer)",
+-          "help": "After the block rules pass, Amazon Bedrock checks the prompt for personal data (names, addresses, phones, bank details, passwords), prompt attacks and data exfiltration. Adds about 0.5 s per Kiro chat."
++          "help": "After the block rules pass, Amazon Bedrock checks the prompt for personal data (names, addresses, phones, bank details, passwords, keys) and requests to move company data outside the organization. Prompt-injection detection is off (it blocked normal coding prompts). Adds about 0.5 s per Kiro chat."
+         },
+         "timeoutMs": "Timeout (ms)",
+         "failMode": "If Bedrock is slow or unavailable",
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 9e67632..7929abc 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -789,7 +789,7 @@
+         },
+         "kiro_ml_guard": {
+           "name": "Bedrock Guardrails (segunda capa)",
+-          "help": "Tras las reglas de bloqueo, Amazon Bedrock revisa el prompt en busca de datos personales (nombres, direcciones, teléfonos, datos bancarios, contraseñas), ataques de prompt y exfiltración de datos. Añade unos 0,5 s por chat de Kiro."
++          "help": "Tras las reglas de bloqueo, Amazon Bedrock revisa el prompt en busca de datos personales (nombres, direcciones, teléfonos, datos bancarios, contraseñas, claves) y de solicitudes para sacar datos de la empresa fuera de la organización. La detección de inyección de prompts está desactivada (bloqueaba prompts de programación normales). Añade unos 0,5 s por chat de Kiro."
+         },
+         "timeoutMs": "Tiempo límite (ms)",
+         "failMode": "Si Bedrock va lento o no está disponible",
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 07df4c9..215d21f 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -789,7 +789,7 @@
+         },
+         "kiro_ml_guard": {
+           "name": "Bedrock Guardrails (ikinci katman)",
+-          "help": "Engelleme kuralları geçildikten sonra Amazon Bedrock istemi kişisel veriler (adlar, adresler, telefonlar, banka bilgileri, parolalar), istem saldırıları ve veri sızdırma açısından denetler. Her Kiro sohbetine yaklaşık 0,5 sn ekler."
++          "help": "Engelleme kuralları geçildikten sonra Amazon Bedrock istemi kişisel veriler (adlar, adresler, telefonlar, banka bilgileri, parolalar, anahtarlar) ve şirket verilerini kuruluş dışına taşıma talepleri açısından denetler. İstem enjeksiyonu tespiti kapalıdır (normal kodlama istemlerini engelliyordu). Her Kiro sohbetine yaklaşık 0,5 sn ekler."
+         },
+         "timeoutMs": "Zaman aşımı (ms)",
+         "failMode": "Bedrock yavaşsa veya erişilemiyorsa",
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index d5b7c43..79aac11 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -789,7 +789,7 @@
+         },
+         "kiro_ml_guard": {
+           "name": "Bedrock Guardrails（第二层）",
+-          "help": "拦截规则通过后，Amazon Bedrock 会检查提示词中的个人数据（姓名、地址、电话、银行信息、密码）、提示词攻击和数据外泄。每次 Kiro 对话约增加 0.5 秒。"
++          "help": "拦截规则通过后，Amazon Bedrock 会检查提示词中的个人数据（姓名、地址、电话、银行信息、密码、密钥）以及将公司数据转移到组织外部的请求。提示词注入检测已关闭（它会拦截正常的编程提示词）。每次 Kiro 对话约增加 0.5 秒。"
+         },
+         "timeoutMs": "超时（毫秒）",
+         "failMode": "当 Bedrock 缓慢或不可用时",

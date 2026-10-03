@@ -1,0 +1,967 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 14:04:30 +0000
+Subject: [PATCH] kiro: guardrails data layer (console API types, query hooks,
+ shared UI, charts deps)
+
+---
+ package.json                  |   2 +
+ pnpm-lock.yaml                | 240 ++++++++++++++++++++++++++++++++++
+ src/kiro/guardrails/api.ts    | 188 ++++++++++++++++++++++++++
+ src/kiro/guardrails/format.ts |  62 +++++++++
+ src/kiro/guardrails/ui.tsx    | 106 +++++++++++++++
+ src/locales/de/common.json    |  17 +++
+ src/locales/en/common.json    |  17 +++
+ src/locales/es/common.json    |  17 +++
+ src/locales/tr/common.json    |  17 +++
+ src/locales/zh/common.json    |  17 +++
+ src/main.tsx                  |   1 +
+ 11 files changed, 684 insertions(+)
+ create mode 100644 src/kiro/guardrails/api.ts
+ create mode 100644 src/kiro/guardrails/format.ts
+ create mode 100644 src/kiro/guardrails/ui.tsx
+
+diff --git a/package.json b/package.json
+index 67cde13..ba2fe48 100644
+--- a/package.json
++++ b/package.json
+@@ -20,6 +20,7 @@
+     "@fontsource-variable/inter": "5.3.0",
+     "@fontsource-variable/jetbrains-mono": "5.3.0",
+     "@hookform/resolvers": "5.0.1",
++    "@mantine/charts": "8.3.18",
+     "@mantine/core": "^8.3.18",
+     "@mantine/hooks": "^8.3.18",
+     "@mantine/modals": "^8.3.18",
+@@ -45,6 +46,7 @@
+     "react-hook-form": "7.56.1",
+     "react-i18next": "^15.4.1",
+     "react-use": "^17.6.0",
++    "recharts": "2.15.4",
+     "znv": "^0.5.0",
+     "zod": "^3.24.3",
+     "zod-empty": "^1.4.4"
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 7d91ae9..83d54e0 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -42,6 +42,9 @@ importers:
+       '@hookform/resolvers':
+         specifier: 5.0.1
+         version: 5.0.1(react-hook-form@7.56.1(react@19.1.0))
++      '@mantine/charts':
++        specifier: 8.3.18
++        version: 8.3.18(@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(@mantine/hooks@8.3.18(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(recharts@2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0))
+       '@mantine/core':
+         specifier: ^8.3.18
+         version: 8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+@@ -117,6 +120,9 @@ importers:
+       react-use:
+         specifier: ^17.6.0
+         version: 17.6.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++      recharts:
++        specifier: 2.15.4
++        version: 2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+       znv:
+         specifier: ^0.5.0
+         version: 0.5.0(zod@3.25.76)
+@@ -973,6 +979,15 @@ packages:
+     peerDependencies:
+       eslint: '>=4.0.0'
+ 
++  '@mantine/charts@8.3.18':
++    resolution: {integrity: sha512-oudif3EUH7Nb9DPm0abAPxpFYDWWjR3k2S5ll0/CcB+pJzlhwaBG19QwpOJaRA6VAvAXDDKOXCO4mi9XCEN78g==}
++    peerDependencies:
++      '@mantine/core': 8.3.18
++      '@mantine/hooks': 8.3.18
++      react: ^18.x || ^19.x
++      react-dom: ^18.x || ^19.x
++      recharts: '>=2.13.3'
++
+   '@mantine/core@8.3.18':
+     resolution: {integrity: sha512-9tph1lTVogKPjTx02eUxDUOdXacPzK62UuSqb4TdGliI54/Xgxftq0Dfqu6XuhCxn9J5MDJaNiLDvL/1KRkYqA==}
+     peerDependencies:
+@@ -1525,6 +1540,33 @@ packages:
+   '@types/chai@5.2.3':
+     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
+ 
++  '@types/d3-array@3.2.2':
++    resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
++
++  '@types/d3-color@3.1.3':
++    resolution: {integrity: sha512-iO90scth9WAbmgv7ogoq57O9YpKmFBbmoEoCHDB2xMBY0+/KVrqAaCDyCE16dUspeOvIxFFRI+0sEtqDqy2b4A==}
++
++  '@types/d3-ease@3.0.2':
++    resolution: {integrity: sha512-NcV1JjO5oDzoK26oMzbILE6HW7uVXOHLQvHshBUW4UMdZGfiY6v5BeQwh9a9tCzv+CeefZQHJt5SRgK154RtiA==}
++
++  '@types/d3-interpolate@3.0.4':
++    resolution: {integrity: sha512-mgLPETlrpVV1YRJIglr4Ez47g7Yxjl1lj7YKsiMCb27VJH9W8NVM6Bb9d8kkpG/uAQS5AmbA48q2IAolKKo1MA==}
++
++  '@types/d3-path@3.1.1':
++    resolution: {integrity: sha512-VMZBYyQvbGmWyWVea0EHs/BwLgxc+MKi1zLDCONksozI4YJMcTt8ZEuIR4Sb1MMTE8MMW49v0IwI5+b7RmfWlg==}
++
++  '@types/d3-scale@4.0.9':
++    resolution: {integrity: sha512-dLmtwB8zkAeO/juAMfnV+sItKjlsw2lKdZVVy6LRr0cBmegxSABiLEpGVmSJJ8O08i4+sGR6qQtb6WtuwJdvVw==}
++
++  '@types/d3-shape@3.2.0':
++    resolution: {integrity: sha512-kVd74ta9eof3eJOvbNd1vGKS/XERRyQbT26Og63hIsvDO84cjD5gEOhsXf26w3FSoNlPVz84DOFcKv/oou+fMw==}
++
++  '@types/d3-time@3.0.4':
++    resolution: {integrity: sha512-yuzZug1nkAAaBlBBikKZTgzCeA+k1uy4ZFwWANOfKw5z5LRhV0gNA7gNkKm7HoK+HRN0wX3EkxGk0fpbWhmB7g==}
++
++  '@types/d3-timer@3.0.2':
++    resolution: {integrity: sha512-Ps3T8E8dZDam6fUyNiMkekK3XUsaUEik+idO9/YjPtfj2qruF8tFBXS7XhtE4iIXBLxhmLjP3SXpLhVf21I9Lw==}
++
+   '@types/deep-eql@4.0.2':
+     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+ 
+@@ -2040,6 +2082,50 @@ packages:
+   csstype@3.2.3:
+     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+ 
++  d3-array@3.2.4:
++    resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
++    engines: {node: '>=12'}
++
++  d3-color@3.1.0:
++    resolution: {integrity: sha512-zg/chbXyeBtMQ1LbD/WSoW2DpC3I0mpmPdW+ynRTj/x2DAWYrIY7qeZIHidozwV24m4iavr15lNwIwLxRmOxhA==}
++    engines: {node: '>=12'}
++
++  d3-ease@3.0.1:
++    resolution: {integrity: sha512-wR/XK3D3XcLIZwpbvQwQ5fK+8Ykds1ip7A2Txe0yxncXSdq1L9skcG7blcedkOX+ZcgxGAmLX1FrRGbADwzi0w==}
++    engines: {node: '>=12'}
++
++  d3-format@3.1.2:
++    resolution: {integrity: sha512-AJDdYOdnyRDV5b6ArilzCPPwc1ejkHcoyFarqlPqT7zRYjhavcT3uSrqcMvsgh2CgoPbK3RCwyHaVyxYcP2Arg==}
++    engines: {node: '>=12'}
++
++  d3-interpolate@3.0.1:
++    resolution: {integrity: sha512-3bYs1rOD33uo8aqJfKP3JWPAibgw8Zm2+L9vBKEHJ2Rg+viTR7o5Mmv5mZcieN+FRYaAOWX5SJATX6k1PWz72g==}
++    engines: {node: '>=12'}
++
++  d3-path@3.1.0:
++    resolution: {integrity: sha512-p3KP5HCf/bvjBSSKuXid6Zqijx7wIfNW+J/maPs+iwR35at5JCbLUT0LzF1cnjbCHWhqzQTIN2Jpe8pRebIEFQ==}
++    engines: {node: '>=12'}
++
++  d3-scale@4.0.2:
++    resolution: {integrity: sha512-GZW464g1SH7ag3Y7hXjf8RoUuAFIqklOAq3MRl4OaWabTFJY9PN/E1YklhXLh+OQ3fM9yS2nOkCoS+WLZ6kvxQ==}
++    engines: {node: '>=12'}
++
++  d3-shape@3.2.0:
++    resolution: {integrity: sha512-SaLBuwGm3MOViRq2ABk3eLoxwZELpH6zhl3FbAoJ7Vm1gofKx6El1Ib5z23NUEhF9AsGl7y+dzLe5Cw2AArGTA==}
++    engines: {node: '>=12'}
++
++  d3-time-format@4.1.0:
++    resolution: {integrity: sha512-dJxPBlzC7NugB2PDLwo9Q8JiTR3M3e4/XANkreKSUxF8vvXKqm1Yfq4Q5dl8budlunRVlUUaDUgFt7eA8D6NLg==}
++    engines: {node: '>=12'}
++
++  d3-time@3.1.0:
++    resolution: {integrity: sha512-VqKjzBLejbSMT4IgbmVgDjpkYrNWUYJnbCGo874u7MMKIWsILRX+OpX/gTk8MqjpT1A/c6HY2dCA77ZN0lkQ2Q==}
++    engines: {node: '>=12'}
++
++  d3-timer@3.0.1:
++    resolution: {integrity: sha512-ndfJ/JxxMd3nw31uyKoY2naivF+r29V+Lc0svZxe1JvvIRmi8hUsrMvdOwgS1o6uBHmiz91geQ0ylPP0aj1VUA==}
++    engines: {node: '>=12'}
++
+   data-view-buffer@1.0.2:
+     resolution: {integrity: sha512-EmKO5V3OLXh1rtK2wgXRansaK1/mtVdTUEiEI0W8RkvgT05kfxaH29PliLnpLP73yYO6142Q72QNa8Wx/A5CqQ==}
+     engines: {node: '>= 0.4'}
+@@ -2072,6 +2158,9 @@ packages:
+       supports-color:
+         optional: true
+ 
++  decimal.js-light@2.5.1:
++    resolution: {integrity: sha512-qIMFpTMZmny+MMIitAB6D7iVPEorVw6YQRWkvarTkT4tBeSLLiHzcwj6q0MmYSFCiVpiqPJTJEYIrpcPzVEIvg==}
++
+   deep-is@0.1.4:
+     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
+ 
+@@ -2349,6 +2438,9 @@ packages:
+     resolution: {integrity: sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==}
+     engines: {node: '>=0.10.0'}
+ 
++  eventemitter3@4.0.7:
++    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
++
+   eventemitter3@5.0.4:
+     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+ 
+@@ -2370,6 +2462,10 @@ packages:
+   fast-deep-equal@3.1.3:
+     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
+ 
++  fast-equals@5.4.3:
++    resolution: {integrity: sha512-8unmvA0qrfpFWBYUate9BTGtQdKHWBYt+KdAIkag7Vvxe7wz8Q2nJg7fLMC0bJqe0bjP31kca7Ckaawrs4Istg==}
++    engines: {node: '>=6.0.0'}
++
+   fast-json-stable-stringify@2.1.0:
+     resolution: {integrity: sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==}
+ 
+@@ -2607,6 +2703,10 @@ packages:
+     resolution: {integrity: sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==}
+     engines: {node: '>= 0.4'}
+ 
++  internmap@2.0.3:
++    resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
++    engines: {node: '>=12'}
++
+   is-array-buffer@3.0.5:
+     resolution: {integrity: sha512-DDfANUiiG2wC1qawP66qlTugJeL5HyzMpfr8lLK+jMQirGzNod0B12cFB/9q838Ru27sBwfw78/rdoU7RERz6A==}
+     engines: {node: '>= 0.4'}
+@@ -3483,6 +3583,12 @@ packages:
+       '@types/react':
+         optional: true
+ 
++  react-smooth@4.0.4:
++    resolution: {integrity: sha512-gnGKTpYwqL0Iii09gHobNolvX4Kiq4PKx6eWBCYYix+8cdw+cGo3do906l1NBPKkSWx1DghC1dlWG9L2uGd61Q==}
++    peerDependencies:
++      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++
+   react-style-singleton@2.2.3:
+     resolution: {integrity: sha512-b6jSvxvVnyptAiLjbkWLE/lOnR4lfTtDAl+eUC7RZy+QQWc6wRzIV2CE6xBuMmDxc2qIihtDCZD5NPOFl7fRBQ==}
+     engines: {node: '>=10'}
+@@ -3534,6 +3640,17 @@ packages:
+     resolution: {integrity: sha512-YTUo+Flmw4ZXiWfQKGcwwc11KnoRAYgzAE2E7mXKCjSviTKShtxBsN6YUUBB2gtaBzKzeKunxhUwNHQuRryhWA==}
+     engines: {node: '>= 4'}
+ 
++  recharts-scale@0.4.5:
++    resolution: {integrity: sha512-kivNFO+0OcUNu7jQquLXAxz1FIwZj8nrj+YkOKc5694NbjCvcT6aSZiIzNzd2Kul4o4rTto8QVR9lMNtxD4G1w==}
++
++  recharts@2.15.4:
++    resolution: {integrity: sha512-UT/q6fwS3c1dHbXv2uFgYJ9BMFHu3fwnd7AYZaEQhXuYQ4hgsxLvsUXzGdKeZrW5xopzDCvuA2N41WJ88I7zIw==}
++    engines: {node: '>=14'}
++    deprecated: 1.x and 2.x branches are no longer active. Bump to Recharts v3 to receive latest features and bugfixes. See https://github.com/recharts/recharts/wiki/3.0-migration-guide
++    peerDependencies:
++      react: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++      react-dom: ^16.0.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
++
+   reflect-metadata@0.2.2:
+     resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
+ 
+@@ -4060,6 +4177,9 @@ packages:
+   util-deprecate@1.0.2:
+     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
+ 
++  victory-vendor@36.9.2:
++    resolution: {integrity: sha512-PnpQQMuxlwYdocC8fIJqVXvkeViHYzotI+NJrCuav0ZYFoq912ZHBk3mCeuj+5/VpodOjPe1z0Fk2ihgzlXqjQ==}
++
+   vite-tsconfig-paths@5.1.4:
+     resolution: {integrity: sha512-cYj0LRuLV2c2sMqhqhGpaO3LretdtMn/BVX4cPLanIZuwwrkVl+lK84E/miEXkCHWXuq65rhNN4rXsBcOB3S4w==}
+     peerDependencies:
+@@ -4965,6 +5085,14 @@ snapshots:
+       lodash: 4.18.1
+       minimatch: 10.2.4
+ 
++  '@mantine/charts@8.3.18(@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(@mantine/hooks@8.3.18(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(recharts@2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0))':
++    dependencies:
++      '@mantine/core': 8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++      '@mantine/hooks': 8.3.18(react@19.1.0)
++      react: 19.1.0
++      react-dom: 19.1.0(react@19.1.0)
++      recharts: 2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++
+   '@mantine/core@8.3.18(@mantine/hooks@8.3.18(react@19.1.0))(@types/react@19.2.14)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+     dependencies:
+       '@floating-ui/react': 0.27.19(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+@@ -5516,6 +5644,30 @@ snapshots:
+       '@types/deep-eql': 4.0.2
+       assertion-error: 2.0.1
+ 
++  '@types/d3-array@3.2.2': {}
++
++  '@types/d3-color@3.1.3': {}
++
++  '@types/d3-ease@3.0.2': {}
++
++  '@types/d3-interpolate@3.0.4':
++    dependencies:
++      '@types/d3-color': 3.1.3
++
++  '@types/d3-path@3.1.1': {}
++
++  '@types/d3-scale@4.0.9':
++    dependencies:
++      '@types/d3-time': 3.0.4
++
++  '@types/d3-shape@3.2.0':
++    dependencies:
++      '@types/d3-path': 3.1.1
++
++  '@types/d3-time@3.0.4': {}
++
++  '@types/d3-timer@3.0.2': {}
++
+   '@types/deep-eql@4.0.2': {}
+ 
+   '@types/estree@1.0.8': {}
+@@ -6104,6 +6256,44 @@ snapshots:
+ 
+   csstype@3.2.3: {}
+ 
++  d3-array@3.2.4:
++    dependencies:
++      internmap: 2.0.3
++
++  d3-color@3.1.0: {}
++
++  d3-ease@3.0.1: {}
++
++  d3-format@3.1.2: {}
++
++  d3-interpolate@3.0.1:
++    dependencies:
++      d3-color: 3.1.0
++
++  d3-path@3.1.0: {}
++
++  d3-scale@4.0.2:
++    dependencies:
++      d3-array: 3.2.4
++      d3-format: 3.1.2
++      d3-interpolate: 3.0.1
++      d3-time: 3.1.0
++      d3-time-format: 4.1.0
++
++  d3-shape@3.2.0:
++    dependencies:
++      d3-path: 3.1.0
++
++  d3-time-format@4.1.0:
++    dependencies:
++      d3-time: 3.1.0
++
++  d3-time@3.1.0:
++    dependencies:
++      d3-array: 3.2.4
++
++  d3-timer@3.0.1: {}
++
+   data-view-buffer@1.0.2:
+     dependencies:
+       call-bound: 1.0.4
+@@ -6132,6 +6322,8 @@ snapshots:
+     dependencies:
+       ms: 2.1.3
+ 
++  decimal.js-light@2.5.1: {}
++
+   deep-is@0.1.4: {}
+ 
+   define-data-property@1.1.4:
+@@ -6560,6 +6752,8 @@ snapshots:
+ 
+   esutils@2.0.3: {}
+ 
++  eventemitter3@4.0.7: {}
++
+   eventemitter3@5.0.4: {}
+ 
+   execa@8.0.1:
+@@ -6582,6 +6776,8 @@ snapshots:
+ 
+   fast-deep-equal@3.1.3: {}
+ 
++  fast-equals@5.4.3: {}
++
+   fast-json-stable-stringify@2.1.0: {}
+ 
+   fast-levenshtein@2.0.6: {}
+@@ -6793,6 +6989,8 @@ snapshots:
+       hasown: 2.0.2
+       side-channel: 1.1.0
+ 
++  internmap@2.0.3: {}
++
+   is-array-buffer@3.0.5:
+     dependencies:
+       call-bind: 1.0.8
+@@ -7746,6 +7944,14 @@ snapshots:
+     optionalDependencies:
+       '@types/react': 19.2.14
+ 
++  react-smooth@4.0.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
++    dependencies:
++      fast-equals: 5.4.3
++      prop-types: 15.8.1
++      react: 19.1.0
++      react-dom: 19.1.0(react@19.1.0)
++      react-transition-group: 4.4.5(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++
+   react-style-singleton@2.2.3(@types/react@19.2.14)(react@19.1.0):
+     dependencies:
+       get-nonce: 1.0.1
+@@ -7815,6 +8021,23 @@ snapshots:
+       tiny-invariant: 1.3.3
+       tslib: 2.8.1
+ 
++  recharts-scale@0.4.5:
++    dependencies:
++      decimal.js-light: 2.5.1
++
++  recharts@2.15.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
++    dependencies:
++      clsx: 2.1.1
++      eventemitter3: 4.0.7
++      lodash: 4.18.1
++      react: 19.1.0
++      react-dom: 19.1.0(react@19.1.0)
++      react-is: 18.3.1
++      react-smooth: 4.0.4(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++      recharts-scale: 0.4.5
++      tiny-invariant: 1.3.3
++      victory-vendor: 36.9.2
++
+   reflect-metadata@0.2.2: {}
+ 
+   reflect.getprototypeof@1.0.10:
+@@ -8389,6 +8612,23 @@ snapshots:
+ 
+   util-deprecate@1.0.2: {}
+ 
++  victory-vendor@36.9.2:
++    dependencies:
++      '@types/d3-array': 3.2.2
++      '@types/d3-ease': 3.0.2
++      '@types/d3-interpolate': 3.0.4
++      '@types/d3-scale': 4.0.9
++      '@types/d3-shape': 3.2.0
++      '@types/d3-time': 3.0.4
++      '@types/d3-timer': 3.0.2
++      d3-array: 3.2.4
++      d3-ease: 3.0.1
++      d3-interpolate: 3.0.1
++      d3-scale: 4.0.2
++      d3-shape: 3.2.0
++      d3-time: 3.1.0
++      d3-timer: 3.0.1
++
+   vite-tsconfig-paths@5.1.4(typescript@5.8.3)(vite@6.4.2(@types/node@22.19.15)(jiti@2.6.1)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.21.0)(yaml@2.8.3)):
+     dependencies:
+       debug: 4.4.3
+diff --git a/src/kiro/guardrails/api.ts b/src/kiro/guardrails/api.ts
+new file mode 100644
+index 0000000..315fe15
+--- /dev/null
++++ b/src/kiro/guardrails/api.ts
+@@ -0,0 +1,188 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/**
++ * Typed access to the Guardrail Console API for the AI Guardrails pages.
++ * Shapes mirror console/app/rules.py and console/app/main.py.
++ */
++import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++
++import { consoleApi } from '@/kiro/api';
++
++export type GuardPath = 'kiro' | 'ai';
++export type EventResult = 'allowed' | 'blocked' | 'rate_limited' | 'error';
++
++export type Rule = {
++  id: string;
++  label: string;
++  description: string;
++  pattern: string;
++  case_insensitive: boolean;
++  applies_to: GuardPath[];
++  enabled: boolean;
++};
++
++export type GuardrailSwitches = {
++  kiro_prompt_guard: { enabled: boolean };
++  kiro_rate_limit: { enabled: boolean; requests: number; window_seconds: number };
++  ai_prompt_guard: { enabled: boolean };
++  ai_token_budget: { enabled: boolean; tokens: number; window_seconds: number };
++};
++
++export type GuardrailConfig = {
++  block_message: string;
++  rules: Rule[];
++  guardrails: GuardrailSwitches;
++};
++
++export type GuardrailsResponse = { config: GuardrailConfig & Record<string, unknown>; version: string };
++export type SaveResponse = GuardrailsResponse & { commit: string };
++
++export type Stats = {
++  hours: number;
++  requests: number;
++  blocked: number;
++  rate_limited: number;
++  users: number;
++  by_rule: [string, number][];
++  blocked_by_user: [string, number][];
++  timeline: { bucket: string; allowed?: number; blocked?: number; rate_limited?: number }[];
++  latency_ms: Record<GuardPath, { p50: number | null; p95: number | null; n: number }>;
++  tokens: number;
++  protections_on: number;
++  protections_total: number;
++  rules_enabled: number;
++};
++
++export type AuditEvent = {
++  ts: string;
++  path: GuardPath;
++  host: string;
++  op: string;
++  status: number;
++  result: EventResult;
++  rule: string;
++  user: string;
++  prompt: string;
++  latency_ms: number;
++  model: string;
++  tokens: number;
++  is_chat: boolean;
++};
++
++export type EventFilter = {
++  q?: string;
++  result?: '' | EventResult;
++  path?: '' | GuardPath;
++  hours?: number;
++  all_ops?: boolean;
++  limit?: number;
++};
++
++export type TestResult = {
++  path: GuardPath;
++  guard_enabled: boolean;
++  would_block: boolean;
++  rules_checked: number;
++  matches: { id: string; label: string; matched: boolean; match?: string }[];
++};
++
++export type PatternCheck = { valid: boolean; error: string | null };
++export type Change = { commit: string; author: string; time: string; summary: string };
++
++const qs = (o: Record<string, unknown>) => {
++  const p = new URLSearchParams();
++  Object.entries(o).forEach(([k, v]) => {
++    if (v !== undefined && v !== '' && v !== false) p.set(k, String(v));
++  });
++  const s = p.toString();
++  return s ? `?${s}` : '';
++};
++
++export const guardKeys = {
++  config: ['kiro', 'guardrails'] as const,
++  stats: (hours: number) => ['kiro', 'stats', hours] as const,
++  events: (f: EventFilter) => ['kiro', 'events', f] as const,
++  history: ['kiro', 'history'] as const,
++};
++
++/** Live data refreshes on the same 5 s cadence as the classic console. */
++export const LIVE_MS = 5000;
++
++export const useGuardrails = () =>
++  useQuery({
++    queryKey: guardKeys.config,
++    queryFn: () => consoleApi<GuardrailsResponse>('GET', '/api/guardrails'),
++  });
++
++export const useStats = (hours = 24) =>
++  useQuery({
++    queryKey: guardKeys.stats(hours),
++    queryFn: () => consoleApi<Stats>('GET', `/api/stats${qs({ hours })}`),
++    refetchInterval: LIVE_MS,
++    placeholderData: keepPreviousData,
++  });
++
++export const useEvents = (f: EventFilter, live = true) =>
++  useQuery({
++    queryKey: guardKeys.events(f),
++    queryFn: () => consoleApi<{ events: AuditEvent[] }>('GET', `/api/events${qs(f)}`).then((r) => r.events),
++    refetchInterval: live ? LIVE_MS : false,
++    placeholderData: keepPreviousData,
++  });
++
++export const useHistory = () =>
++  useQuery({
++    queryKey: guardKeys.history,
++    queryFn: () => consoleApi<{ changes: Change[] }>('GET', '/api/history').then((r) => r.changes),
++  });
++
++export const checkPattern = (pattern: string) =>
++  consoleApi<PatternCheck>('POST', '/api/check-pattern', { pattern });
++
++export const testPrompt = (text: string, path: GuardPath) =>
++  consoleApi<TestResult>('POST', '/api/test-prompt', { text, path });
++
++/**
++ * Save the whole config. The console applies it to the gateway, commits it to git and
++ * returns 409 when someone else saved first (base_version no longer current).
++ */
++export const useSaveGuardrails = () => {
++  const qc = useQueryClient();
++  return useMutation({
++    mutationFn: ({ config, base_version }: { config: GuardrailConfig; base_version: string }) =>
++      consoleApi<SaveResponse>('PUT', '/api/guardrails', {
++        block_message: config.block_message,
++        rules: config.rules,
++        guardrails: config.guardrails,
++        base_version,
++      }),
++    onSuccess: (data) => {
++      qc.setQueryData(guardKeys.config, { config: data.config, version: data.version });
++      qc.invalidateQueries({ queryKey: guardKeys.history });
++      qc.invalidateQueries({ queryKey: ['kiro', 'stats'] });
++    },
++  });
++};
++
++/** Rule id from a human label: "AWS access key ID" -> "aws-access-key-id". */
++export const slugify = (label: string) =>
++  label
++    .toLowerCase()
++    .normalize('NFKD')
++    .replace(/[^a-z0-9]+/g, '-')
++    .replace(/^-+|-+$/g, '')
++    .slice(0, 63);
+diff --git a/src/kiro/guardrails/format.ts b/src/kiro/guardrails/format.ts
+new file mode 100644
+index 0000000..e88738e
+--- /dev/null
++++ b/src/kiro/guardrails/format.ts
+@@ -0,0 +1,62 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Formatting and lookup helpers shared by the AI Guardrails pages. */
++import { useMemo } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { useGuardrails } from './api';
++
++/** Map rule id -> human label; ids not in the current rules file fall back to a readable name. */
++export const useRuleLabel = () => {
++  const { t } = useTranslation();
++  const { data } = useGuardrails();
++  return useMemo(() => {
++    const m = new Map((data?.config.rules ?? []).map((r) => [r.id, r.label]));
++    return (id: string) => {
++      if (!id) return '';
++      if (m.has(id)) return m.get(id)!;
++      if (id === 'prompt-guard') return t('kiro.guard.rule.promptGuard');
++      if (id === 'unknown') return t('kiro.guard.rule.unknown');
++      return id;
++    };
++  }, [data, t]);
++};
++
++export const fmtNumber = (n: number | null | undefined, lang?: string) =>
++  n == null ? '–' : new Intl.NumberFormat(lang).format(n);
++
++export const fmtMs = (n: number | null | undefined) =>
++  n == null ? '–' : n >= 1000 ? `${(n / 1000).toFixed(2)} s` : `${Math.round(n)} ms`;
++
++/** "3 min ago" in the active language. */
++export const useTimeAgo = () => {
++  const { i18n } = useTranslation();
++  return useMemo(() => {
++    const rtf = new Intl.RelativeTimeFormat(i18n.language, { numeric: 'auto' });
++    return (iso: string) => {
++      const s = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
++      const a = Math.abs(s);
++      if (a < 60) return rtf.format(s, 'second');
++      if (a < 3600) return rtf.format(Math.round(s / 60), 'minute');
++      if (a < 86400) return rtf.format(Math.round(s / 3600), 'hour');
++      return rtf.format(Math.round(s / 86400), 'day');
++    };
++  }, [i18n.language]);
++};
++
++export const fmtTime = (iso: string, lang?: string) =>
++  new Intl.DateTimeFormat(lang, { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(iso));
+diff --git a/src/kiro/guardrails/ui.tsx b/src/kiro/guardrails/ui.tsx
+new file mode 100644
+index 0000000..c5d5e64
+--- /dev/null
++++ b/src/kiro/guardrails/ui.tsx
+@@ -0,0 +1,106 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/** Small building blocks shared by the AI Guardrails pages. */
++import { Badge, Card, Center, Group, Loader, Stack, Text, ThemeIcon } from '@mantine/core';
++import type { FC, ReactNode } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import IconAlert from '~icons/tabler/alert-triangle';
++import IconInbox from '~icons/tabler/inbox';
++
++import type { EventResult, GuardPath } from './api';
++
++const RESULT_COLOR: Record<EventResult, string> = {
++  allowed: 'teal',
++  blocked: 'red',
++  rate_limited: 'yellow',
++  error: 'gray',
++};
++
++export const ResultBadge: FC<{ result: EventResult }> = ({ result }) => {
++  const { t } = useTranslation();
++  return (
++    <Badge color={RESULT_COLOR[result] ?? 'gray'} variant="light" radius="sm">
++      {t(`kiro.guard.result.${result}`)}
++    </Badge>
++  );
++};
++
++export const PathBadge: FC<{ path: GuardPath }> = ({ path }) => {
++  const { t } = useTranslation();
++  return (
++    <Badge color={path === 'kiro' ? 'violet' : 'blue'} variant="outline" radius="sm">
++      {t(`kiro.guard.path.${path}`)}
++    </Badge>
++  );
++};
++
++/** Card with a title row (title, optional hint and right-side action). */
++export const SectionCard: FC<{
++  title: ReactNode;
++  hint?: ReactNode;
++  action?: ReactNode;
++  children: ReactNode;
++  h?: number | string;
++}> = ({ title, hint, action, children, h }) => (
++  <Card h={h} withBorder>
++    <Group justify="space-between" align="flex-start" mb="md" wrap="nowrap">
++      <Stack gap={2}>
++        <Text fw={600}>{title}</Text>
++        {hint && (
++          <Text size="xs" c="dimmed">
++            {hint}
++          </Text>
++        )}
++      </Stack>
++      {action}
++    </Group>
++    {children}
++  </Card>
++);
++
++export const LoadingState: FC = () => (
++  <Center py="xl">
++    <Loader size="sm" />
++  </Center>
++);
++
++export const EmptyState: FC<{ title: string; body?: string }> = ({ title, body }) => (
++  <Stack align="center" gap={6} py="xl">
++    <ThemeIcon variant="light" color="gray" size={40} radius="md">
++      <IconInbox width={20} height={20} />
++    </ThemeIcon>
++    <Text fw={500}>{title}</Text>
++    {body && (
++      <Text size="sm" c="dimmed" ta="center" maw={420}>
++        {body}
++      </Text>
++    )}
++  </Stack>
++);
++
++export const ErrorState: FC<{ error: unknown }> = ({ error }) => {
++  const { t } = useTranslation();
++  return (
++    <Group gap="sm" py="md" c="red">
++      <IconAlert width={18} height={18} />
++      <Text size="sm">
++        {t('kiro.guard.loadError')}: {error instanceof Error ? error.message : String(error)}
++      </Text>
++    </Group>
++  );
++};
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 71ab38f..6b00bab 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -500,6 +500,23 @@
+     "comingSoon": {
+       "title": "Arriving in the next build",
+       "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    },
++    "guard": {
++      "result": {
++        "allowed": "Erlaubt",
++        "blocked": "Blockiert",
++        "rate_limited": "Ratenbegrenzt",
++        "error": "Fehler"
++      },
++      "path": {
++        "kiro": "Kiro",
++        "ai": "KI-Route"
++      },
++      "rule": {
++        "promptGuard": "Prompt-Schutz der KI-Route",
++        "unknown": "Frühere Blockierung (Regel nicht erfasst)"
++      },
++      "loadError": "Daten konnten nicht geladen werden"
+     }
+   }
+ }
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index 1c0463d..6c86e16 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -500,6 +500,23 @@
+     "comingSoon": {
+       "title": "Arriving in the next build",
+       "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    },
++    "guard": {
++      "result": {
++        "allowed": "Allowed",
++        "blocked": "Blocked",
++        "rate_limited": "Rate limited",
++        "error": "Error"
++      },
++      "path": {
++        "kiro": "Kiro",
++        "ai": "AI route"
++      },
++      "rule": {
++        "promptGuard": "AI route prompt guard",
++        "unknown": "Earlier block (rule not recorded)"
++      },
++      "loadError": "Could not load data"
+     }
+   }
+ }
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 0b145b9..bccc6bb 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -500,6 +500,23 @@
+     "comingSoon": {
+       "title": "Arriving in the next build",
+       "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    },
++    "guard": {
++      "result": {
++        "allowed": "Permitido",
++        "blocked": "Bloqueado",
++        "rate_limited": "Limitado",
++        "error": "Error"
++      },
++      "path": {
++        "kiro": "Kiro",
++        "ai": "Ruta de IA"
++      },
++      "rule": {
++        "promptGuard": "Protección de prompts de la ruta de IA",
++        "unknown": "Bloqueo anterior (regla no registrada)"
++      },
++      "loadError": "No se pudieron cargar los datos"
+     }
+   }
+ }
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 6b75d75..2ca3ea9 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -500,6 +500,23 @@
+     "comingSoon": {
+       "title": "Arriving in the next build",
+       "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    },
++    "guard": {
++      "result": {
++        "allowed": "İzin verildi",
++        "blocked": "Engellendi",
++        "rate_limited": "Hız sınırı",
++        "error": "Hata"
++      },
++      "path": {
++        "kiro": "Kiro",
++        "ai": "Yapay zekâ rotası"
++      },
++      "rule": {
++        "promptGuard": "Yapay zekâ rotası istem koruması",
++        "unknown": "Önceki engelleme (kural kaydedilmedi)"
++      },
++      "loadError": "Veriler yüklenemedi"
+     }
+   }
+ }
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index 169496a..5d0b64c 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -500,6 +500,23 @@
+     "comingSoon": {
+       "title": "Arriving in the next build",
+       "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    },
++    "guard": {
++      "result": {
++        "allowed": "已放行",
++        "blocked": "已拦截",
++        "rate_limited": "已限流",
++        "error": "错误"
++      },
++      "path": {
++        "kiro": "Kiro",
++        "ai": "AI 路由"
++      },
++      "rule": {
++        "promptGuard": "AI 路由提示词防护",
++        "unknown": "早期拦截（未记录规则）"
++      },
++      "loadError": "无法加载数据"
+     }
+   }
+ }
+diff --git a/src/main.tsx b/src/main.tsx
+index 37882bc..f83f2c5 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -16,6 +16,7 @@
+  */
+ import '@mantine/core/styles.css';
+ import '@mantine/notifications/styles.css';
++import '@mantine/charts/styles.css';
+ import '@fontsource-variable/inter';
+ import '@fontsource-variable/jetbrains-mono';
+ import './styles/global.css';

@@ -1,0 +1,234 @@
+# Kiro egress gateway PoC: Squid (CONNECT tier) -> APISIX (TLS termination + policy) -> upstream.
+# All host-published ports bind to 127.0.0.1 only. Secrets come from .env (git-ignored).
+name: kiro-gateway
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.34
+    restart: unless-stopped
+    command:
+      - etcd
+      - --name=etcd0
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd:2380
+      - --initial-cluster=etcd0=http://etcd:2380
+    volumes:
+      - etcd-data:/etcd-data
+    networks: [gw]
+    # Not published to the host: only APISIX talks to etcd.
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  apisix:
+    image: apache/apisix:3.19.0-debian
+    restart: unless-stopped
+    depends_on:
+      etcd:
+        condition: service_healthy
+    environment:
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?set APISIX_ADMIN_KEY in .env}
+    ulimits:
+      nofile: { soft: 65535, hard: 65535 }
+    volumes:
+      - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./pki/admin:/usr/local/apisix/conf/admin-tls:ro   # from scripts/make-admin-cert.sh
+      - apisix-audit:/usr/local/apisix/logs   # new named volume inherits apisix ownership from the image
+    ports:
+      - "127.0.0.1:9080:9080"   # HTTP data plane
+      - "127.0.0.1:9443:9443"   # HTTPS data plane (TLS termination)
+      # Admin API + dashboard: host-local only. Remote access goes through the Guardrail Console
+      # on :9180 (login + IP allowlist), which proxies /ui/ and /apisix/admin/ to this port.
+      - "127.0.0.1:9181:9180"
+    networks:
+      gw:
+        ipv4_address: 172.30.0.10   # fixed so Squid's hosts_file can target it
+
+  squid:
+    image: ubuntu/squid:6.6-24.04_edge
+    restart: unless-stopped
+    depends_on: [apisix]
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+      - ./squid/hosts:/etc/squid/gw-hosts:ro
+      # Client CIDRs allowed to use the proxy (one per line), written by scripts/init.sh
+      # from KGW_PROXY_ALLOW_CIDRS. Not tracked: it is environment-specific.
+      - ./data/squid-allowed-clients.txt:/etc/squid/allowed-clients.txt:ro
+      - squid-logs:/var/log/squid
+    ports:
+      - "${KGW_PROXY_BIND_ADDR:-127.0.0.1}:3128:3128"   # explicit proxy for clients (HTTPS_PROXY)
+    networks: [gw]
+
+  console:
+    build: ./console
+    image: kiro-gateway-console:local
+    restart: unless-stopped
+    depends_on: [apisix]
+    user: "1000:1000"
+    env_file: .env                     # admin key (for apply.sh) + CONSOLE_USER/CONSOLE_PASSWORD_HASH
+    environment:
+      GW_DIR: /gw
+      APISIX_ADMIN_URL: https://apisix:9180
+      GW_CA: /gw/pki/ca.crt
+      AUDIT_LOG: /audit/kiro-audit.log
+      KGW_DATA_DIR: /gw/data
+      # Who may reach the console/portal (CIDR list). Loopback + the Docker host are always needed
+      # by the scripts; add your operator network or VPN range in .env.
+      CONSOLE_ALLOW_CIDRS: ${CONSOLE_ALLOW_CIDRS:-127.0.0.0/8,172.30.0.1/32}
+    volumes:
+      # Code repo READ-ONLY; runtime state (live rules + their git history + generated policy)
+      # in ./data. pki/ is masked: only the public CA cert is visible, private keys never enter.
+      - .:/gw:ro
+      - ./data:/gw/data
+      - type: tmpfs
+        target: /gw/pki
+        tmpfs: { mode: 0755 }
+      - ./pki/ca.crt:/gw/pki/ca.crt:ro
+      - ./pki/admin:/tls:ro              # TLS cert/key for the console's HTTPS listener
+      - ./dashboard/dist:/dashboard:ro   # forked APISIX dashboard build (scripts/dashboard.sh build)
+      - apisix-audit:/audit:ro
+    ports:
+      # The single public port (IPv4 only: docker-proxy hides client IPs on IPv6).
+      - "${KGW_BIND_ADDR:-127.0.0.1}:${KGW_PORT:-9180}:9200"
+    networks:
+      gw:
+        ipv4_address: 172.30.0.20      # fixed: allowlisted in APISIX allow_admin
+
+  # Second guardrail layer: Amazon Bedrock Guardrails (ApplyGuardrail) via the instance role.
+  # No published port; accepts requests only from apisix (172.30.0.10) and console (172.30.0.20).
+  ml-guard:
+    build: ./ml-guard
+    image: kiro-gateway-ml-guard:local
+    restart: unless-stopped
+    environment:
+      # Empty BEDROCK_GUARDRAIL_ID = layer not configured (checks answer 503; the gateway fails
+      # open/closed per the Rules page). Credentials: instance role / standard AWS env chain.
+      BEDROCK_GUARDRAIL_ID: ${BEDROCK_GUARDRAIL_ID:-}
+      BEDROCK_GUARDRAIL_VERSION: ${BEDROCK_GUARDRAIL_VERSION:-1}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 256m
+    networks:
+      gw:
+        ipv4_address: 172.30.0.40      # fixed: the Lua guard calls it by address
+
+  # ---- monitoring (no published ports: reached only via the Docker network) -------------
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [gw]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    restart: unless-stopped
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./monitoring/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+      - apisix-audit:/audit:ro            # audit log, read-only
+      - otelcol-data:/var/lib/otelcol     # file read offsets
+    networks: [gw]
+
+  volume-init:                         # one-shot: hand fresh volumes to the uid 10001 services
+    image: busybox:1.37.0
+    user: root
+    command: ["chown", "-R", "10001:10001", "/var/tempo", "/var/lib/otelcol", "/loki"]
+    volumes:
+      - tempo-data:/var/tempo
+      - otelcol-data:/var/lib/otelcol
+      - loki-data:/loki
+    restart: "no"
+
+  tempo:
+    image: grafana/tempo:2.10.1
+    restart: unless-stopped
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./monitoring/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    networks: [gw]
+
+  loki:
+    image: grafana/loki:3.7.1
+    restart: unless-stopped
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./monitoring/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    networks: [gw]
+
+  grafana:
+    image: grafana/grafana:12.4.2
+    restart: unless-stopped
+    depends_on: [prometheus, loki, tempo]
+    environment:
+      # Served under the console at https://<host>:9180/grafana/ (no published port).
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_ENFORCE_DOMAIN: "false"
+      # Sign-in is the Guardrail Console's: it verifies the session and sends X-WEBAUTH-USER.
+      # Only the console container (172.30.0.20) may assert that header.
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-WEBAUTH-USER
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_WHITELIST: 172.30.0.20
+      GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_DISABLE_SIGNOUT_MENU: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Editor      # Explore + ad-hoc queries; dashboards stay read-only
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/grafana-admin-password
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_LIVE_MAX_CONNECTIONS: "0"               # no websockets through the console proxy
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/kiro-gateway-guardrails.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./pki/grafana-admin-password:/run/grafana-admin-password:ro
+      - grafana-data:/var/lib/grafana
+    networks: [gw]
+
+networks:
+  gw:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  etcd-data:
+  apisix-audit:
+  squid-logs:   # read with: docker compose exec squid tail -f /var/log/squid/access.log
+  prometheus-data:
+  tempo-data:
+  otelcol-data:
+  loki-data:
+  grafana-data:

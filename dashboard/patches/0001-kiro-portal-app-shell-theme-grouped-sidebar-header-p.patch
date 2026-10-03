@@ -1,0 +1,2415 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 13:56:30 +0000
+Subject: [PATCH] kiro: portal app shell (theme, grouped sidebar, header, page
+ stubs)
+
+---
+ package.json                              |   2 +
+ pnpm-lock.yaml                            |  16 ++
+ src/config/antdConfigProvider.tsx         |  12 +-
+ src/config/constant.ts                    |   4 +-
+ src/kiro/api.ts                           |  81 +++++++
+ src/kiro/nav.ts                           |  82 ++++++++
+ src/kiro/portal.css                       |  82 ++++++++
+ src/kiro/shell/Page.tsx                   |  64 ++++++
+ src/kiro/shell/PortalHeader.tsx           | 246 ++++++++++++++++++++++
+ src/kiro/shell/PortalNavbar.tsx           | 137 ++++++++++++
+ src/kiro/shell/shell.module.css           | 198 +++++++++++++++++
+ src/kiro/theme.ts                         | 132 ++++++++++++
+ src/locales/de/common.json                |  80 +++++++
+ src/locales/en/common.json                |  80 +++++++
+ src/locales/es/common.json                |  80 +++++++
+ src/locales/tr/common.json                |  80 +++++++
+ src/locales/zh/common.json                |  80 +++++++
+ src/main.tsx                              |  14 +-
+ src/routeTree.gen.ts                      | 169 +++++++++++++++
+ src/routes/__root.tsx                     |  35 ++-
+ src/routes/guardrails/activity.tsx        |  23 ++
+ src/routes/guardrails/rules/index.tsx     |  23 ++
+ src/routes/guardrails/tester.tsx          |  23 ++
+ src/routes/index.tsx                      |   4 +-
+ src/routes/observability/latency.tsx      |  23 ++
+ src/routes/observability/traces/index.tsx |  23 ++
+ src/routes/observability/traffic.tsx      |  23 ++
+ src/routes/observability/usage.tsx        |  23 ++
+ src/routes/overview.tsx                   |  23 ++
+ 29 files changed, 1843 insertions(+), 19 deletions(-)
+ create mode 100644 src/kiro/api.ts
+ create mode 100644 src/kiro/nav.ts
+ create mode 100644 src/kiro/portal.css
+ create mode 100644 src/kiro/shell/Page.tsx
+ create mode 100644 src/kiro/shell/PortalHeader.tsx
+ create mode 100644 src/kiro/shell/PortalNavbar.tsx
+ create mode 100644 src/kiro/shell/shell.module.css
+ create mode 100644 src/kiro/theme.ts
+ create mode 100644 src/routes/guardrails/activity.tsx
+ create mode 100644 src/routes/guardrails/rules/index.tsx
+ create mode 100644 src/routes/guardrails/tester.tsx
+ create mode 100644 src/routes/observability/latency.tsx
+ create mode 100644 src/routes/observability/traces/index.tsx
+ create mode 100644 src/routes/observability/traffic.tsx
+ create mode 100644 src/routes/observability/usage.tsx
+ create mode 100644 src/routes/overview.tsx
+
+diff --git a/package.json b/package.json
+index eb6e003..67cde13 100644
+--- a/package.json
++++ b/package.json
+@@ -17,6 +17,8 @@
+   "dependencies": {
+     "@ant-design/pro-components": "^2.8.7",
+     "@ant-design/v5-patch-for-react-19": "^1.0.3",
++    "@fontsource-variable/inter": "5.3.0",
++    "@fontsource-variable/jetbrains-mono": "5.3.0",
+     "@hookform/resolvers": "5.0.1",
+     "@mantine/core": "^8.3.18",
+     "@mantine/hooks": "^8.3.18",
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 0cafba5..7d91ae9 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -33,6 +33,12 @@ importers:
+       '@ant-design/v5-patch-for-react-19':
+         specifier: ^1.0.3
+         version: 1.0.3(antd@5.29.3(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
++      '@fontsource-variable/inter':
++        specifier: 5.3.0
++        version: 5.3.0
++      '@fontsource-variable/jetbrains-mono':
++        specifier: 5.3.0
++        version: 5.3.0
+       '@hookform/resolvers':
+         specifier: 5.0.1
+         version: 5.0.1(react-hook-form@7.56.1(react@19.1.0))
+@@ -904,6 +910,12 @@ packages:
+   '@floating-ui/utils@0.2.11':
+     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+ 
++  '@fontsource-variable/inter@5.3.0':
++    resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
++
++  '@fontsource-variable/jetbrains-mono@5.3.0':
++    resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
++
+   '@hookform/resolvers@5.0.1':
+     resolution: {integrity: sha512-u/+Jp83luQNx9AdyW2fIPGY6Y7NG68eN2ZW8FOJYL+M0i4s49+refdJdOp/A9n9HFQtQs3HIDHQvX3ZET2o7YA==}
+     peerDependencies:
+@@ -4888,6 +4900,10 @@ snapshots:
+ 
+   '@floating-ui/utils@0.2.11': {}
+ 
++  '@fontsource-variable/inter@5.3.0': {}
++
++  '@fontsource-variable/jetbrains-mono@5.3.0': {}
++
+   '@hookform/resolvers@5.0.1(react-hook-form@7.56.1(react@19.1.0))':
+     dependencies:
+       '@standard-schema/utils': 0.3.0
+diff --git a/src/config/antdConfigProvider.tsx b/src/config/antdConfigProvider.tsx
+index e8af7d8..b2c6d83 100644
+--- a/src/config/antdConfigProvider.tsx
++++ b/src/config/antdConfigProvider.tsx
+@@ -16,7 +16,8 @@
+  */
+ import '@ant-design/v5-patch-for-react-19';
+ 
+-import { ConfigProvider } from 'antd';
++import { useComputedColorScheme } from '@mantine/core';
++import { ConfigProvider, theme as antdTheme } from 'antd';
+ import deDE from 'antd/locale/de_DE';
+ import enUS from 'antd/locale/en_US';
+ import esES from 'antd/locale/es_ES';
+@@ -25,6 +26,8 @@ import zhCN from 'antd/locale/zh_CN';
+ import type { PropsWithChildren } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
++import { antdTokens } from '@/kiro/theme';
++
+ // antd's own locale must follow the app language, or antd-rendered
+ // surfaces (pagination, table controls) stay English after a switch
+ // (#3417).
+@@ -39,6 +42,8 @@ const antdLocales: Record<string, typeof enUS> = {
+ export const AntdConfigProvider = (props: PropsWithChildren) => {
+   const { children } = props;
+   const { t, i18n } = useTranslation();
++  // Kiro portal: antd surfaces follow the Mantine colour scheme and portal tokens.
++  const scheme = useComputedColorScheme('dark');
+ 
+   return (
+     <ConfigProvider
+@@ -46,9 +51,8 @@ export const AntdConfigProvider = (props: PropsWithChildren) => {
+       locale={antdLocales[i18n.language] ?? enUS}
+       renderEmpty={() => <div>{t('noData')}</div>}
+       theme={{
+-        token: {
+-          borderRadiusSM: 2,
+-        },
++        algorithm: scheme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
++        token: antdTokens(scheme),
+       }}
+     >
+       {children}
+diff --git a/src/config/constant.ts b/src/config/constant.ts
+index 0518bde..9d9286d 100644
+--- a/src/config/constant.ts
++++ b/src/config/constant.ts
+@@ -46,5 +46,5 @@ export const SKIP_INTERCEPTOR_HEADER = '__dashboard__skipInterceptor';
+  * Stopgap until the value is runtime-configurable (e.g. via Settings).
+  */
+ export const API_TIMEOUT_MS = 60_000;
+-export const APPSHELL_HEADER_HEIGHT = 60;
+-export const APPSHELL_NAVBAR_WIDTH = 250;
++export const APPSHELL_HEADER_HEIGHT = 56;
++export const APPSHELL_NAVBAR_WIDTH = 248;
+diff --git a/src/kiro/api.ts b/src/kiro/api.ts
+new file mode 100644
+index 0000000..0af18ae
+--- /dev/null
++++ b/src/kiro/api.ts
+@@ -0,0 +1,81 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/**
++ * Client for the Guardrail Console API (same origin, session cookie). Every portal page
++ * outside "Gateway" talks to this; the Admin API keeps using the upstream axios client.
++ */
++export class ConsoleApiError extends Error {
++  constructor(
++    message: string,
++    readonly status: number
++  ) {
++    super(message);
++  }
++}
++
++type Json = Record<string, unknown> | unknown[] | null;
++
++export async function consoleApi<T = unknown>(
++  method: 'GET' | 'POST' | 'PUT',
++  path: string,
++  body?: Json
++): Promise<T> {
++  const headers: Record<string, string> = {};
++  if (method !== 'GET') {
++    headers['X-Console'] = '1'; // CSRF defence required by the console for mutations
++    headers['Content-Type'] = 'application/json';
++  }
++  const res = await fetch(path, {
++    method,
++    headers,
++    credentials: 'same-origin',
++    body: body === undefined ? undefined : JSON.stringify(body),
++  });
++  let data: unknown = null;
++  try {
++    data = await res.json();
++  } catch {
++    /* empty body */
++  }
++  if (res.status === 401) {
++    // Session expired: go through the console sign-in and come back to the portal.
++    window.location.assign('/?next=ui');
++  }
++  if (!res.ok) {
++    const detail = (data as { detail?: unknown } | null)?.detail;
++    const msg = Array.isArray(detail)
++      ? detail.map((d: { msg?: string }) => d.msg).join('; ')
++      : typeof detail === 'string'
++        ? detail
++        : `HTTP ${res.status}`;
++    throw new ConsoleApiError(msg, res.status);
++  }
++  return data as T;
++}
++
++export type GatewayStatus = { healthy: boolean; data_plane: boolean; admin_api: boolean };
++export type Me = { user: string };
++
++export const getStatus = () => consoleApi<GatewayStatus>('GET', '/api/status');
++export const getMe = () => consoleApi<Me>('GET', '/api/me');
++export const signOut = async () => {
++  try {
++    await consoleApi('POST', '/api/logout');
++  } finally {
++    window.location.assign('/');
++  }
++};
+diff --git a/src/kiro/nav.ts b/src/kiro/nav.ts
+new file mode 100644
+index 0000000..f6a3ded
+--- /dev/null
++++ b/src/kiro/nav.ts
+@@ -0,0 +1,82 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/**
++ * Grouped sidebar navigation: Overview · AI Guardrails · Observability · Gateway.
++ * "Gateway" is the upstream APISIX dashboard's own list (config/navRoutes.ts), unchanged.
++ */
++import type { Resources } from '@/config/i18n';
++import type { NavIcon, NavRoute } from '@/config/navRoutes';
++import { navRoutes } from '@/config/navRoutes';
++import IconActivity from '~icons/tabler/activity';
++import IconTraffic from '~icons/tabler/chart-line';
++import IconLatency from '~icons/tabler/clock-hour-4';
++import IconTester from '~icons/tabler/flask';
++import IconOverview from '~icons/tabler/layout-dashboard';
++import IconRules from '~icons/tabler/list-check';
++import IconTraces from '~icons/tabler/timeline';
++import IconUsage from '~icons/tabler/users-group';
++
++/** Portal page: a path under /ui and a key in the `kiro.nav` locale section. */
++export type KiroNavKey = keyof Resources['en']['common']['kiro']['nav'];
++export type KiroPageKey = keyof Resources['en']['common']['kiro']['page'];
++export type PortalNavItem = { to: string; label: KiroNavKey; icon: NavIcon };
++export type NavGroup =
++  | { id: string; label: KiroNavKey | null; kind: 'portal'; items: PortalNavItem[] }
++  | { id: string; label: KiroNavKey; kind: 'gateway'; items: NavRoute[] };
++
++/** One flat, typed entry per page, with its label already resolved by the caller's `t`. */
++export type FlatNavItem = { to: string; icon: NavIcon; label: string; group: string };
++
++type T = (key: `kiro.nav.${KiroNavKey}` | `sources.${NavRoute['label']}`) => string;
++
++export const itemLabel = (t: T, group: NavGroup, i: PortalNavItem | NavRoute) =>
++  group.kind === 'gateway'
++    ? t(`sources.${(i as NavRoute).label}`)
++    : t(`kiro.nav.${(i as PortalNavItem).label}`);
++
++export const groupLabel = (t: T, group: NavGroup) => (group.label ? t(`kiro.nav.${group.label}`) : '');
++
++export const navGroups: NavGroup[] = [
++  {
++    id: 'overview',
++    label: null,
++    kind: 'portal',
++    items: [{ to: '/overview', label: 'overview', icon: IconOverview }],
++  },
++  {
++    id: 'guardrails',
++    label: 'guardrails',
++    kind: 'portal',
++    items: [
++      { to: '/guardrails/rules', label: 'rules', icon: IconRules },
++      { to: '/guardrails/activity', label: 'activity', icon: IconActivity },
++      { to: '/guardrails/tester', label: 'tester', icon: IconTester },
++    ],
++  },
++  {
++    id: 'observability',
++    label: 'observability',
++    kind: 'portal',
++    items: [
++      { to: '/observability/traffic', label: 'traffic', icon: IconTraffic },
++      { to: '/observability/latency', label: 'latency', icon: IconLatency },
++      { to: '/observability/usage', label: 'usage', icon: IconUsage },
++      { to: '/observability/traces', label: 'traces', icon: IconTraces },
++    ],
++  },
++  { id: 'gateway', label: 'gateway', kind: 'gateway', items: navRoutes },
++];
+diff --git a/src/kiro/portal.css b/src/kiro/portal.css
+new file mode 100644
+index 0000000..b9a8a6a
+--- /dev/null
++++ b/src/kiro/portal.css
+@@ -0,0 +1,82 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/* Kiro portal: global polish applied to every page (upstream APISIX pages included). */
++html,
++body {
++  background: var(--kg-canvas);
++  font-feature-settings: 'cv11', 'ss01';
++  -webkit-font-smoothing: antialiased;
++}
++
++/* Numbers in tables and metrics line up. */
++.mantine-Table-td,
++.ant-table-cell,
++.kg-num {
++  font-variant-numeric: tabular-nums;
++}
++
++/* Cards and papers share the portal surface, border and elevation. */
++.mantine-Card-root,
++.mantine-Paper-root[data-with-border] {
++  background: var(--kg-surface);
++  border-color: var(--kg-border);
++  box-shadow: var(--kg-shadow);
++}
++
++/* Upstream editor frames follow the scheme instead of fixed light greys. */
++.editor-wrapper {
++  border-color: var(--kg-border) !important;
++}
++.editor-wrapper:focus-within {
++  border-color: var(--mantine-primary-color-filled) !important;
++}
++.editor-wrapper--disabled {
++  background-color: var(--kg-raised) !important;
++}
++
++/* antd tables (Services list etc.) blend into portal cards. */
++.ant-pro-table .ant-pro-card,
++.ant-pro-table-list-toolbar-container {
++  background: transparent;
++}
++.ant-table-wrapper .ant-table {
++  background: var(--kg-surface);
++  border-radius: var(--kg-radius-card);
++}
++.ant-table-wrapper .ant-table-thead > tr > th {
++  background: var(--kg-raised);
++  color: var(--kg-text-2);
++  font-weight: 600;
++  font-size: 12px;
++  text-transform: uppercase;
++  letter-spacing: 0.04em;
++}
++
++/* Subtle scrollbars. */
++* {
++  scrollbar-width: thin;
++  scrollbar-color: var(--kg-border) transparent;
++}
++
++@media (prefers-reduced-motion: reduce) {
++  *,
++  *::before,
++  *::after {
++    transition: none !important;
++    animation: none !important;
++  }
++}
+diff --git a/src/kiro/shell/Page.tsx b/src/kiro/shell/Page.tsx
+new file mode 100644
+index 0000000..ea4eef6
+--- /dev/null
++++ b/src/kiro/shell/Page.tsx
+@@ -0,0 +1,64 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { Box, Card, Group, Stack, Text, ThemeIcon, Title } from '@mantine/core';
++import type { FC, ReactNode } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import type { KiroPageKey } from '@/kiro/nav';
++import IconHammer from '~icons/tabler/hammer';
++
++/** Standard page header for portal pages: title, one-line subtitle, optional actions. */
++export const PortalPageHeader: FC<{ title: string; subtitle?: ReactNode; actions?: ReactNode }> = ({
++  title,
++  subtitle,
++  actions,
++}) => (
++  <Group justify="space-between" align="flex-end" mb="lg" wrap="wrap" gap="md">
++    <Box>
++      <Title order={1}>{title}</Title>
++      {subtitle && (
++        <Text c="dimmed" size="sm" mt={4}>
++          {subtitle}
++        </Text>
++      )}
++    </Box>
++    {actions && <Group gap="sm">{actions}</Group>}
++  </Group>
++);
++
++/** Placeholder for portal pages that later stages fill in. */
++export const ComingSoon: FC<{ page: KiroPageKey }> = ({ page }) => {
++  const { t } = useTranslation();
++  return (
++    <Box maw={1440}>
++      <PortalPageHeader title={t(`kiro.page.${page}.title`)} subtitle={t(`kiro.page.${page}.subtitle`)} />
++      <Card>
++        <Group gap="md" wrap="nowrap" align="flex-start">
++          <ThemeIcon variant="light" size={40} radius="md">
++            <IconHammer width={20} height={20} />
++          </ThemeIcon>
++          <Stack gap={4}>
++            <Text fw={600}>{t('kiro.comingSoon.title')}</Text>
++            <Text c="dimmed" size="sm">
++              {t('kiro.comingSoon.body')}
++            </Text>
++          </Stack>
++        </Group>
++      </Card>
++    </Box>
++  );
++};
+diff --git a/src/kiro/shell/PortalHeader.tsx b/src/kiro/shell/PortalHeader.tsx
+new file mode 100644
+index 0000000..0566ec7
+--- /dev/null
++++ b/src/kiro/shell/PortalHeader.tsx
+@@ -0,0 +1,246 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import {
++  ActionIcon,
++  AppShell,
++  Avatar,
++  Burger,
++  Button,
++  Group,
++  Kbd,
++  Menu,
++  Modal,
++  NavLink,
++  Stack,
++  Text,
++  TextInput,
++  Tooltip,
++  useComputedColorScheme,
++  useMantineColorScheme,
++} from '@mantine/core';
++import { useDisclosure, useHotkeys } from '@mantine/hooks';
++import { useQuery } from '@tanstack/react-query';
++import { useNavigate } from '@tanstack/react-router';
++import { type FC, useMemo, useState } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import { LanguageMenu } from '@/components/Header/LanguageMenu';
++import { SettingModalBtn } from '@/components/Header/SettingModalBtn';
++import type { NavRoute } from '@/config/navRoutes';
++import { getMe, getStatus, signOut } from '@/kiro/api';
++import { groupLabel, itemLabel, navGroups, type PortalNavItem } from '@/kiro/nav';
++import IconBook from '~icons/tabler/book';
++import IconChart from '~icons/tabler/chart-dots-3';
++import IconConsole from '~icons/tabler/layout-board';
++import IconLogout from '~icons/tabler/logout';
++import IconMoon from '~icons/tabler/moon';
++import IconSearch from '~icons/tabler/search';
++import IconSun from '~icons/tabler/sun';
++
++import { BrandMark } from './PortalNavbar';
++import classes from './shell.module.css';
++
++const ThemeToggle = () => {
++  const { t } = useTranslation();
++  const { setColorScheme } = useMantineColorScheme();
++  const scheme = useComputedColorScheme('dark');
++  const label = scheme === 'dark' ? t('kiro.header.themeLight') : t('kiro.header.themeDark');
++  return (
++    <Tooltip label={label}>
++      <ActionIcon
++        variant="default"
++        size="lg"
++        aria-label={label}
++        onClick={() => setColorScheme(scheme === 'dark' ? 'light' : 'dark')}
++      >
++        {scheme === 'dark' ? <IconSun width={18} height={18} /> : <IconMoon width={18} height={18} />}
++      </ActionIcon>
++    </Tooltip>
++  );
++};
++
++const HealthPill = () => {
++  const { t } = useTranslation();
++  const { data } = useQuery({ queryKey: ['kiro', 'status'], queryFn: getStatus, refetchInterval: 30_000 });
++  const state = data ? (data.healthy ? 'ok' : 'bad') : 'unknown';
++  const detail = data
++    ? t('kiro.header.healthDetail', {
++        dp: data.data_plane ? t('kiro.header.up') : t('kiro.header.down'),
++        admin: data.admin_api ? t('kiro.header.up') : t('kiro.header.down'),
++      })
++    : t('kiro.header.checking');
++  return (
++    <Tooltip label={detail}>
++      <span className={classes.healthPill} role="status">
++        <span className={classes.dot} data-state={state} aria-hidden />
++        {data ? (data.healthy ? t('kiro.header.healthy') : t('kiro.header.degraded')) : t('kiro.header.checking')}
++      </span>
++    </Tooltip>
++  );
++};
++
++const UserMenu = () => {
++  const { t } = useTranslation();
++  const { data } = useQuery({ queryKey: ['kiro', 'me'], queryFn: getMe, staleTime: 300_000 });
++  const user = data?.user ?? '…';
++  return (
++    <Menu position="bottom-end" width={240} shadow="md">
++      <Menu.Target>
++        <ActionIcon variant="subtle" size="lg" radius="xl" aria-label={t('kiro.header.userMenu')}>
++          <Avatar size={32} radius="xl" color="indigo">
++            {user.slice(0, 2).toUpperCase()}
++          </Avatar>
++        </ActionIcon>
++      </Menu.Target>
++      <Menu.Dropdown>
++        <Menu.Label>
++          {t('kiro.header.signedInAs')} <b>{user}</b>
++        </Menu.Label>
++        <Menu.Item component="a" href="/grafana/" target="_blank" rel="noopener noreferrer" leftSection={<IconChart width={16} />}>
++          {t('kiro.header.grafana')}
++        </Menu.Item>
++        <Menu.Item component="a" href="/" leftSection={<IconConsole width={16} />}>
++          {t('kiro.header.classicConsole')}
++        </Menu.Item>
++        <Menu.Item
++          component="a"
++          href="https://apisix.apache.org/docs/"
++          target="_blank"
++          rel="noopener noreferrer"
++          leftSection={<IconBook width={16} />}
++        >
++          {t('kiro.header.docs')}
++        </Menu.Item>
++        <Menu.Divider />
++        <Menu.Item color="red" leftSection={<IconLogout width={16} />} onClick={() => void signOut()}>
++          {t('kiro.header.signOut')}
++        </Menu.Item>
++      </Menu.Dropdown>
++    </Menu>
++  );
++};
++
++/** Lightweight page search (⌘K / Ctrl+K) over every portal and gateway page. */
++const PageSearch = () => {
++  const { t } = useTranslation();
++  const navigate = useNavigate();
++  const [opened, { open, close }] = useDisclosure(false);
++  const [q, setQ] = useState('');
++  useHotkeys([['mod+K', () => open()]]);
++  const pages = useMemo(
++    () =>
++      navGroups.flatMap((g) =>
++        (g.items as Array<PortalNavItem | NavRoute>).map((i) => ({
++          to: i.to as string,
++          icon: i.icon,
++          label: itemLabel(t, g, i),
++          group: groupLabel(t, g),
++        }))
++      ),
++    [t]
++  );
++  const hits = pages.filter((p) => `${p.label} ${p.group}`.toLowerCase().includes(q.trim().toLowerCase()));
++  const go = (to: string) => {
++    close();
++    setQ('');
++    void navigate({ to });
++  };
++  return (
++    <>
++      <Button
++        className={classes.search}
++        classNames={{ inner: classes.searchInner, label: classes.searchLabel }}
++        variant="default"
++        onClick={open}
++        leftSection={<IconSearch width={16} />}
++        visibleFrom="md"
++      >
++        {t('kiro.header.searchHint')}
++        <Kbd className={classes.kbd} size="xs">
++          {t('kiro.header.shortcut')}
++        </Kbd>
++      </Button>
++      <ActionIcon variant="default" size="lg" onClick={open} aria-label={t('kiro.header.search')} hiddenFrom="md">
++        <IconSearch width={18} />
++      </ActionIcon>
++      <Modal opened={opened} onClose={close} withCloseButton={false} padding="sm" radius="lg" size="md" yOffset="12vh">
++        <TextInput
++          data-autofocus
++          size="md"
++          placeholder={t('kiro.header.searchHint')}
++          leftSection={<IconSearch width={16} />}
++          value={q}
++          onChange={(e) => setQ(e.currentTarget.value)}
++          onKeyDown={(e) => {
++            if (e.key === 'Enter' && hits[0]) go(hits[0].to);
++          }}
++          aria-label={t('kiro.header.search')}
++        />
++        <Stack gap={2} mt="xs" mah={360} style={{ overflowY: 'auto' }}>
++          {hits.map(({ to, label, group, icon: Icon }) => (
++            <NavLink
++              key={to}
++              label={label}
++              description={group}
++              leftSection={<Icon width={18} height={18} aria-hidden />}
++              onClick={() => go(to)}
++              style={{ borderRadius: 8 }}
++            />
++          ))}
++          {!hits.length && (
++            <Text c="dimmed" size="sm" p="sm">
++              {t('noData')}
++            </Text>
++          )}
++        </Stack>
++      </Modal>
++    </>
++  );
++};
++
++type Props = { opened: boolean; toggle: () => void };
++
++export const PortalHeader: FC<Props> = ({ opened, toggle }) => {
++  const { t } = useTranslation();
++  return (
++    <AppShell.Header className={classes.header}>
++      <Group h="100%" px={{ base: 'sm', sm: 'lg' }} justify="space-between" wrap="nowrap" gap="sm">
++        <Group gap="sm" wrap="nowrap">
++          <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label={t('a11y.toggleNavigation')} />
++          <Group gap={8} hiddenFrom="sm" wrap="nowrap">
++            <BrandMark size={26} />
++            <Text fw={650} style={{ whiteSpace: 'nowrap' }} visibleFrom="xs">
++              {t('kiro.brand.name')}
++            </Text>
++          </Group>
++          <PageSearch />
++        </Group>
++        <Group gap="xs" wrap="nowrap">
++          <Group visibleFrom="sm">
++            <HealthPill />
++          </Group>
++          <ThemeToggle />
++          <SettingModalBtn />
++          <Group visibleFrom="sm">
++            <LanguageMenu />
++          </Group>
++          <UserMenu />
++        </Group>
++      </Group>
++    </AppShell.Header>
++  );
++};
+diff --git a/src/kiro/shell/PortalNavbar.tsx b/src/kiro/shell/PortalNavbar.tsx
+new file mode 100644
+index 0000000..f917c54
+--- /dev/null
++++ b/src/kiro/shell/PortalNavbar.tsx
+@@ -0,0 +1,137 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import {
++  AppShell,
++  Badge,
++  Box,
++  CloseButton,
++  Group,
++  NavLink,
++  ScrollArea,
++  Stack,
++  Text,
++  ThemeIcon,
++  Tooltip,
++  UnstyledButton,
++} from '@mantine/core';
++import { Link, useRouterState } from '@tanstack/react-router';
++import type { FC } from 'react';
++import { useTranslation } from 'react-i18next';
++
++import type { NavRoute } from '@/config/navRoutes';
++import { groupLabel, itemLabel, navGroups, type PortalNavItem } from '@/kiro/nav';
++import IconChevronsLeft from '~icons/tabler/layout-sidebar-left-collapse';
++import IconChevronsRight from '~icons/tabler/layout-sidebar-left-expand';
++import IconShield from '~icons/tabler/shield-check';
++
++import classes from './shell.module.css';
++
++export const BrandMark: FC<{ size?: number }> = ({ size = 28 }) => (
++  <ThemeIcon
++    size={size}
++    radius="md"
++    variant="gradient"
++    gradient={{ from: 'indigo.4', to: 'violet.5', deg: 135 }}
++    aria-hidden
++  >
++    <IconShield width={size * 0.6} height={size * 0.6} />
++  </ThemeIcon>
++);
++
++const isActive = (pathname: string, to: string) =>
++  pathname === `/ui${to}` || pathname.startsWith(`/ui${to}/`) || pathname === to || pathname.startsWith(`${to}/`);
++
++type Props = { collapsed: boolean; onToggleCollapsed: () => void; onNavigate: () => void };
++
++export const PortalNavbar: FC<Props> = ({ collapsed, onToggleCollapsed, onNavigate }) => {
++  const { t } = useTranslation();
++  const pathname = useRouterState({ select: (s) => s.location.pathname });
++
++  return (
++    <AppShell.Navbar className={classes.navbar} data-collapsed={collapsed || undefined}>
++      <Group className={classes.brand} wrap="nowrap" gap="sm">
++        <BrandMark />
++        {!collapsed && (
++          <>
++            <Box style={{ lineHeight: 1.15 }}>
++              <Text fw={650} size="md">
++                {t('kiro.brand.name')}
++              </Text>
++              <Text size="xs" c="dimmed">
++                {t('kiro.brand.tagline')}
++              </Text>
++            </Box>
++            <Badge size="xs" ml="auto" variant="light">
++              {t('kiro.brand.poc')}
++            </Badge>
++            <CloseButton hiddenFrom="sm" onClick={onNavigate} aria-label={t('a11y.toggleNavigation')} />
++          </>
++        )}
++      </Group>
++
++      <ScrollArea className={classes.scroll} type="hover" scrollbarSize={6}>
++        <nav aria-label={t('kiro.brand.name')}>
++          {navGroups.map((group) => (
++            <Box key={group.id} className={classes.group}>
++              {group.label && !collapsed && (
++                <Text className={classes.groupLabel}>{groupLabel(t, group)}</Text>
++              )}
++              {group.label && collapsed && <div className={classes.groupRule} aria-hidden />}
++              {(group.items as Array<PortalNavItem | NavRoute>).map((item) => {
++                const { icon: Icon } = item;
++                const to = item.to as string;
++                const text = itemLabel(t, group, item);
++                const link = (
++                  <NavLink
++                    key={to}
++                    component={Link}
++                    to={to}
++                    onClick={onNavigate}
++                    label={collapsed ? undefined : text}
++                    aria-label={collapsed ? text : undefined}
++                    active={isActive(pathname, to)}
++                    className={classes.link}
++                    leftSection={<Icon aria-hidden focusable="false" width={18} height={18} />}
++                  />
++                );
++                return collapsed ? (
++                  <Tooltip key={to} label={text} position="right" openDelay={100}>
++                    {link}
++                  </Tooltip>
++                ) : (
++                  link
++                );
++              })}
++            </Box>
++          ))}
++        </nav>
++      </ScrollArea>
++
++      <Stack className={classes.footer} gap="xs">
++        <UnstyledButton
++          className={classes.collapseBtn}
++          onClick={onToggleCollapsed}
++          aria-label={collapsed ? t('kiro.nav.expand') : t('kiro.nav.collapse')}
++          visibleFrom="sm"
++        >
++          {collapsed ? <IconChevronsRight width={18} height={18} /> : <IconChevronsLeft width={18} height={18} />}
++          {!collapsed && <Text size="sm">{t('kiro.nav.collapse')}</Text>}
++        </UnstyledButton>
++      </Stack>
++    </AppShell.Navbar>
++  );
++};
+diff --git a/src/kiro/shell/shell.module.css b/src/kiro/shell/shell.module.css
+new file mode 100644
+index 0000000..0eb03fc
+--- /dev/null
++++ b/src/kiro/shell/shell.module.css
+@@ -0,0 +1,198 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/* App shell: grouped sidebar, translucent header. Tokens come from kiro/theme.ts (--kg-*). */
++.navbar {
++  background: var(--kg-surface);
++  border-right: 1px solid var(--kg-border);
++  display: flex;
++  flex-direction: column;
++  transition: width var(--kg-motion-panel) var(--kg-ease);
++}
++
++.brand {
++  height: 56px;
++  padding: 0 16px;
++  flex: none;
++  border-bottom: 1px solid var(--kg-border);
++}
++
++.navbar[data-collapsed] .brand {
++  justify-content: center;
++  padding: 0;
++}
++
++.scroll {
++  flex: 1;
++  padding: 8px 10px;
++}
++
++.group + .group {
++  margin-top: 6px;
++}
++
++.groupLabel {
++  padding: 14px 10px 6px;
++  font-size: 11px;
++  font-weight: 600;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
++  color: var(--kg-text-2);
++}
++
++.groupRule {
++  height: 1px;
++  margin: 10px 14px;
++  background: var(--kg-border);
++}
++
++.link {
++  border-radius: var(--mantine-radius-md);
++  padding: 7px 10px;
++  color: var(--kg-text-2);
++  font-size: 13.5px;
++  transition:
++    background-color var(--kg-motion-fast) var(--kg-ease),
++    color var(--kg-motion-fast) var(--kg-ease);
++
++  &:hover {
++    background: var(--kg-raised);
++    color: var(--kg-text);
++  }
++
++  &[data-active] {
++    background: var(--kg-brand-soft);
++    color: var(--mantine-primary-color-filled);
++    font-weight: 550;
++  }
++
++  & :global(.mantine-NavLink-section) {
++    margin-inline-end: 10px;
++  }
++}
++
++.navbar[data-collapsed] .link {
++  justify-content: center;
++  padding: 9px 0;
++
++  & :global(.mantine-NavLink-section) {
++    margin-inline-end: 0;
++  }
++
++  & :global(.mantine-NavLink-body) {
++    display: none;
++  }
++}
++
++.footer {
++  padding: 10px;
++  border-top: 1px solid var(--kg-border);
++  flex: none;
++}
++
++.healthCard {
++  padding: 10px 12px;
++  border-radius: var(--mantine-radius-md);
++  background: var(--kg-raised);
++}
++
++.dot {
++  width: 8px;
++  height: 8px;
++  border-radius: 50%;
++  flex: none;
++  background: var(--kg-text-2);
++
++  &[data-state='ok'] {
++    background: var(--kg-allowed);
++    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kg-allowed) 25%, transparent);
++  }
++
++  &[data-state='bad'] {
++    background: var(--kg-blocked);
++    box-shadow: 0 0 0 3px color-mix(in srgb, var(--kg-blocked) 25%, transparent);
++  }
++}
++
++.collapseBtn {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  padding: 7px 10px;
++  border-radius: var(--mantine-radius-md);
++  color: var(--kg-text-2);
++
++  &:hover {
++    background: var(--kg-raised);
++    color: var(--kg-text);
++  }
++}
++
++.navbar[data-collapsed] .collapseBtn {
++  justify-content: center;
++}
++
++.header {
++  background: var(--kg-header-bg);
++  backdrop-filter: saturate(140%) blur(10px);
++  border-bottom: 1px solid var(--kg-border);
++}
++
++.search {
++  width: 300px;
++  justify-content: flex-start;
++  color: var(--kg-text-2);
++  background: var(--kg-raised);
++  border: 1px solid var(--kg-border);
++  font-weight: 400;
++
++  &:hover {
++    background: var(--kg-raised);
++    border-color: var(--mantine-primary-color-filled);
++  }
++}
++
++.kbd {
++  margin-left: auto;
++  font-size: 11px;
++}
++
++.searchInner {
++  justify-content: flex-start;
++}
++
++.searchLabel {
++  flex: 1;
++  display: flex;
++  align-items: center;
++  gap: 8px;
++}
++
++.healthPill {
++  display: inline-flex;
++  align-items: center;
++  gap: 8px;
++  padding: 4px 10px;
++  border-radius: 999px;
++  border: 1px solid var(--kg-border);
++  font-size: 12.5px;
++  color: var(--kg-text-2);
++}
++
++.main {
++  background: var(--kg-canvas);
++  min-height: 100dvh;
++}
+diff --git a/src/kiro/theme.ts b/src/kiro/theme.ts
+new file mode 100644
+index 0000000..09e195e
+--- /dev/null
++++ b/src/kiro/theme.ts
+@@ -0,0 +1,132 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++/**
++ * Kiro Gateway portal theme (dashboard/design/DESIGN.md). Dark by default, light supported.
++ * Mantine's `dark` tuple is remapped to the portal palette so every upstream Mantine component
++ * picks it up without per-page changes.
++ */
++import {
++  createTheme,
++  type CSSVariablesResolver,
++  type MantineColorsTuple,
++  rem,
++} from '@mantine/core';
++
++const indigo: MantineColorsTuple = [
++  '#EEF0FF', '#DDE1FF', '#BAC2FF', '#98A3FF', '#7C8CFF',
++  '#6575F5', '#4C5BD4', '#3D49AE', '#2F3888', '#222863',
++];
++
++// Mantine dark scale: 0 = text … 4 = borders, 5 = hover, 6 = surfaces, 7 = default body.
++const dark: MantineColorsTuple = [
++  '#E8ECF4', '#C5CCDA', '#9AA4B8', '#6B7489', '#2A3346',
++  '#1A2130', '#121722', '#0E121B', '#0B0E14', '#080A0F',
++];
++
++export const portalTheme = createTheme({
++  primaryColor: 'indigo',
++  colors: { indigo, dark },
++  primaryShade: { light: 6, dark: 4 },
++  defaultGradient: { from: 'indigo.5', to: 'violet.6', deg: 135 },
++  fontFamily:
++    '"Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
++  fontFamilyMonospace:
++    '"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
++  headings: {
++    fontWeight: '650',
++    sizes: {
++      h1: { fontSize: rem(24), lineHeight: '1.25' },
++      h2: { fontSize: rem(20), lineHeight: '1.3' },
++      h3: { fontSize: rem(16), lineHeight: '1.35' },
++      h4: { fontSize: rem(14), lineHeight: '1.4' },
++    },
++  },
++  fontSizes: { xs: rem(12), sm: rem(13), md: rem(14), lg: rem(16), xl: rem(20) },
++  defaultRadius: 'md',
++  radius: { xs: rem(4), sm: rem(6), md: rem(8), lg: rem(12), xl: rem(16) },
++  cursorType: 'pointer',
++  focusRing: 'auto',
++  respectReducedMotion: true,
++  other: {
++    motion: { fast: '150ms', panel: '220ms', easing: 'cubic-bezier(.2,.8,.2,1)' },
++  },
++  components: {
++    Card: { defaultProps: { radius: 'lg', padding: 'lg', withBorder: true } },
++    Paper: { defaultProps: { radius: 'lg' } },
++    Badge: { defaultProps: { radius: 'xl', variant: 'light' } },
++    Tooltip: { defaultProps: { withArrow: true, openDelay: 250 } },
++    NavLink: { defaultProps: { variant: 'light' } },
++  },
++});
++
++/** Portal tokens as CSS variables (--kg-*) for both schemes; used by global.css and new pages. */
++export const portalCssVariables: CSSVariablesResolver = () => ({
++  variables: {
++    '--kg-radius-card': rem(12),
++    '--kg-motion-fast': '150ms',
++    '--kg-motion-panel': '220ms',
++    '--kg-ease': 'cubic-bezier(.2,.8,.2,1)',
++  },
++  light: {
++    '--mantine-color-body': '#F6F7FB',
++    '--kg-canvas': '#F6F7FB',
++    '--kg-surface': '#FFFFFF',
++    '--kg-raised': '#F0F2F8',
++    '--kg-border': '#E3E7F0',
++    '--kg-text': '#121722',
++    '--kg-text-2': '#5B6478',
++    '--kg-brand-soft': 'rgba(76,91,212,.10)',
++    '--kg-allowed': '#0F9D6E',
++    '--kg-blocked': '#D93A3A',
++    '--kg-limited': '#B7791F',
++    '--kg-info': '#0B84C6',
++    '--kg-shadow': '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10)',
++    '--kg-header-bg': 'rgba(246,247,251,.82)',
++  },
++  dark: {
++    '--mantine-color-body': '#0B0E14',
++    '--kg-canvas': '#0B0E14',
++    '--kg-surface': '#121722',
++    '--kg-raised': '#1A2130',
++    '--kg-border': '#232B3B',
++    '--kg-text': '#E8ECF4',
++    '--kg-text-2': '#9AA4B8',
++    '--kg-brand-soft': 'rgba(124,140,255,.14)',
++    '--kg-allowed': '#34D399',
++    '--kg-blocked': '#F87171',
++    '--kg-limited': '#FBBF24',
++    '--kg-info': '#38BDF8',
++    '--kg-shadow': 'inset 0 1px 0 rgba(255,255,255,.03)',
++    '--kg-header-bg': 'rgba(11,14,20,.78)',
++  },
++});
++
++/** antd tokens matching the portal theme (some upstream pages render antd tables/forms). */
++export const antdTokens = (scheme: 'light' | 'dark') => ({
++  colorPrimary: scheme === 'dark' ? '#7C8CFF' : '#4C5BD4',
++  colorBgContainer: scheme === 'dark' ? '#121722' : '#FFFFFF',
++  colorBgElevated: scheme === 'dark' ? '#1A2130' : '#FFFFFF',
++  colorBgLayout: scheme === 'dark' ? '#0B0E14' : '#F6F7FB',
++  colorBorder: scheme === 'dark' ? '#2A3346' : '#E3E7F0',
++  colorBorderSecondary: scheme === 'dark' ? '#232B3B' : '#EEF1F6',
++  colorText: scheme === 'dark' ? '#E8ECF4' : '#121722',
++  colorTextSecondary: scheme === 'dark' ? '#9AA4B8' : '#5B6478',
++  borderRadius: 8,
++  borderRadiusSM: 6,
++  fontFamily: '"Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
++  fontSize: 14,
++});
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 60b822f..71ab38f 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -421,5 +421,85 @@
+     "openSettings": "Open settings",
+     "selectLanguage": "Select language",
+     "toggleNavigation": "Toggle navigation"
++  },
++  "kiro": {
++    "brand": {
++      "name": "Kiro Gateway",
++      "tagline": "AI Gateway",
++      "poc": "PoC"
++    },
++    "nav": {
++      "overview": "Overview",
++      "guardrails": "AI Guardrails",
++      "rules": "Rules",
++      "activity": "Activity",
++      "tester": "Prompt tester",
++      "observability": "Observability",
++      "traffic": "Traffic",
++      "latency": "Latency",
++      "usage": "Usage",
++      "traces": "Traces",
++      "gateway": "Gateway",
++      "collapse": "Collapse sidebar",
++      "expand": "Expand sidebar"
++    },
++    "header": {
++      "healthy": "Gateway healthy",
++      "degraded": "Gateway degraded",
++      "checking": "Checking gateway…",
++      "healthDetail": "Data plane: {{dp}} · Admin API: {{admin}}",
++      "up": "up",
++      "down": "down",
++      "themeLight": "Switch to light theme",
++      "themeDark": "Switch to dark theme",
++      "userMenu": "Account menu",
++      "signedInAs": "Signed in as",
++      "signOut": "Sign out",
++      "adminKey": "APISIX admin key",
++      "docs": "APISIX docs",
++      "classicConsole": "Classic console",
++      "grafana": "Grafana",
++      "search": "Search",
++      "searchHint": "Search pages…",
++      "shortcut": "⌘K"
++    },
++    "page": {
++      "overview": {
++        "title": "Overview",
++        "subtitle": "Guardrails, traffic and usage at a glance"
++      },
++      "rules": {
++        "title": "Rules",
++        "subtitle": "What the gateway blocks before it reaches a model"
++      },
++      "activity": {
++        "title": "Activity",
++        "subtitle": "Every checked prompt, allowed or blocked"
++      },
++      "tester": {
++        "title": "Prompt tester",
++        "subtitle": "Check text against the live rules without sending it anywhere"
++      },
++      "traffic": {
++        "title": "Traffic",
++        "subtitle": "Requests, status codes and bandwidth"
++      },
++      "latency": {
++        "title": "Latency",
++        "subtitle": "End-to-end, upstream and gateway time"
++      },
++      "usage": {
++        "title": "Usage",
++        "subtitle": "Who uses Kiro and the AI route, and how much"
++      },
++      "traces": {
++        "title": "Traces",
++        "subtitle": "Follow a single request through the gateway"
++      }
++    },
++    "comingSoon": {
++      "title": "Arriving in the next build",
++      "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    }
+   }
+ }
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index b896a6e..1c0463d 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -421,5 +421,85 @@
+     "openSettings": "Open settings",
+     "selectLanguage": "Select language",
+     "toggleNavigation": "Toggle navigation"
++  },
++  "kiro": {
++    "brand": {
++      "name": "Kiro Gateway",
++      "tagline": "AI Gateway",
++      "poc": "PoC"
++    },
++    "nav": {
++      "overview": "Overview",
++      "guardrails": "AI Guardrails",
++      "rules": "Rules",
++      "activity": "Activity",
++      "tester": "Prompt tester",
++      "observability": "Observability",
++      "traffic": "Traffic",
++      "latency": "Latency",
++      "usage": "Usage",
++      "traces": "Traces",
++      "gateway": "Gateway",
++      "collapse": "Collapse sidebar",
++      "expand": "Expand sidebar"
++    },
++    "header": {
++      "healthy": "Gateway healthy",
++      "degraded": "Gateway degraded",
++      "checking": "Checking gateway…",
++      "healthDetail": "Data plane: {{dp}} · Admin API: {{admin}}",
++      "up": "up",
++      "down": "down",
++      "themeLight": "Switch to light theme",
++      "themeDark": "Switch to dark theme",
++      "userMenu": "Account menu",
++      "signedInAs": "Signed in as",
++      "signOut": "Sign out",
++      "adminKey": "APISIX admin key",
++      "docs": "APISIX docs",
++      "classicConsole": "Classic console",
++      "grafana": "Grafana",
++      "search": "Search",
++      "searchHint": "Search pages…",
++      "shortcut": "⌘K"
++    },
++    "page": {
++      "overview": {
++        "title": "Overview",
++        "subtitle": "Guardrails, traffic and usage at a glance"
++      },
++      "rules": {
++        "title": "Rules",
++        "subtitle": "What the gateway blocks before it reaches a model"
++      },
++      "activity": {
++        "title": "Activity",
++        "subtitle": "Every checked prompt, allowed or blocked"
++      },
++      "tester": {
++        "title": "Prompt tester",
++        "subtitle": "Check text against the live rules without sending it anywhere"
++      },
++      "traffic": {
++        "title": "Traffic",
++        "subtitle": "Requests, status codes and bandwidth"
++      },
++      "latency": {
++        "title": "Latency",
++        "subtitle": "End-to-end, upstream and gateway time"
++      },
++      "usage": {
++        "title": "Usage",
++        "subtitle": "Who uses Kiro and the AI route, and how much"
++      },
++      "traces": {
++        "title": "Traces",
++        "subtitle": "Follow a single request through the gateway"
++      }
++    },
++    "comingSoon": {
++      "title": "Arriving in the next build",
++      "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    }
+   }
+ }
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 635c9a4..0b145b9 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -421,5 +421,85 @@
+     "openSettings": "Open settings",
+     "selectLanguage": "Select language",
+     "toggleNavigation": "Toggle navigation"
++  },
++  "kiro": {
++    "brand": {
++      "name": "Kiro Gateway",
++      "tagline": "AI Gateway",
++      "poc": "PoC"
++    },
++    "nav": {
++      "overview": "Overview",
++      "guardrails": "AI Guardrails",
++      "rules": "Rules",
++      "activity": "Activity",
++      "tester": "Prompt tester",
++      "observability": "Observability",
++      "traffic": "Traffic",
++      "latency": "Latency",
++      "usage": "Usage",
++      "traces": "Traces",
++      "gateway": "Gateway",
++      "collapse": "Collapse sidebar",
++      "expand": "Expand sidebar"
++    },
++    "header": {
++      "healthy": "Gateway healthy",
++      "degraded": "Gateway degraded",
++      "checking": "Checking gateway…",
++      "healthDetail": "Data plane: {{dp}} · Admin API: {{admin}}",
++      "up": "up",
++      "down": "down",
++      "themeLight": "Switch to light theme",
++      "themeDark": "Switch to dark theme",
++      "userMenu": "Account menu",
++      "signedInAs": "Signed in as",
++      "signOut": "Sign out",
++      "adminKey": "APISIX admin key",
++      "docs": "APISIX docs",
++      "classicConsole": "Classic console",
++      "grafana": "Grafana",
++      "search": "Search",
++      "searchHint": "Search pages…",
++      "shortcut": "⌘K"
++    },
++    "page": {
++      "overview": {
++        "title": "Overview",
++        "subtitle": "Guardrails, traffic and usage at a glance"
++      },
++      "rules": {
++        "title": "Rules",
++        "subtitle": "What the gateway blocks before it reaches a model"
++      },
++      "activity": {
++        "title": "Activity",
++        "subtitle": "Every checked prompt, allowed or blocked"
++      },
++      "tester": {
++        "title": "Prompt tester",
++        "subtitle": "Check text against the live rules without sending it anywhere"
++      },
++      "traffic": {
++        "title": "Traffic",
++        "subtitle": "Requests, status codes and bandwidth"
++      },
++      "latency": {
++        "title": "Latency",
++        "subtitle": "End-to-end, upstream and gateway time"
++      },
++      "usage": {
++        "title": "Usage",
++        "subtitle": "Who uses Kiro and the AI route, and how much"
++      },
++      "traces": {
++        "title": "Traces",
++        "subtitle": "Follow a single request through the gateway"
++      }
++    },
++    "comingSoon": {
++      "title": "Arriving in the next build",
++      "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    }
+   }
+ }
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index ed8e033..6b75d75 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -421,5 +421,85 @@
+     "openSettings": "Open settings",
+     "selectLanguage": "Select language",
+     "toggleNavigation": "Toggle navigation"
++  },
++  "kiro": {
++    "brand": {
++      "name": "Kiro Gateway",
++      "tagline": "AI Gateway",
++      "poc": "PoC"
++    },
++    "nav": {
++      "overview": "Overview",
++      "guardrails": "AI Guardrails",
++      "rules": "Rules",
++      "activity": "Activity",
++      "tester": "Prompt tester",
++      "observability": "Observability",
++      "traffic": "Traffic",
++      "latency": "Latency",
++      "usage": "Usage",
++      "traces": "Traces",
++      "gateway": "Gateway",
++      "collapse": "Collapse sidebar",
++      "expand": "Expand sidebar"
++    },
++    "header": {
++      "healthy": "Gateway healthy",
++      "degraded": "Gateway degraded",
++      "checking": "Checking gateway…",
++      "healthDetail": "Data plane: {{dp}} · Admin API: {{admin}}",
++      "up": "up",
++      "down": "down",
++      "themeLight": "Switch to light theme",
++      "themeDark": "Switch to dark theme",
++      "userMenu": "Account menu",
++      "signedInAs": "Signed in as",
++      "signOut": "Sign out",
++      "adminKey": "APISIX admin key",
++      "docs": "APISIX docs",
++      "classicConsole": "Classic console",
++      "grafana": "Grafana",
++      "search": "Search",
++      "searchHint": "Search pages…",
++      "shortcut": "⌘K"
++    },
++    "page": {
++      "overview": {
++        "title": "Overview",
++        "subtitle": "Guardrails, traffic and usage at a glance"
++      },
++      "rules": {
++        "title": "Rules",
++        "subtitle": "What the gateway blocks before it reaches a model"
++      },
++      "activity": {
++        "title": "Activity",
++        "subtitle": "Every checked prompt, allowed or blocked"
++      },
++      "tester": {
++        "title": "Prompt tester",
++        "subtitle": "Check text against the live rules without sending it anywhere"
++      },
++      "traffic": {
++        "title": "Traffic",
++        "subtitle": "Requests, status codes and bandwidth"
++      },
++      "latency": {
++        "title": "Latency",
++        "subtitle": "End-to-end, upstream and gateway time"
++      },
++      "usage": {
++        "title": "Usage",
++        "subtitle": "Who uses Kiro and the AI route, and how much"
++      },
++      "traces": {
++        "title": "Traces",
++        "subtitle": "Follow a single request through the gateway"
++      }
++    },
++    "comingSoon": {
++      "title": "Arriving in the next build",
++      "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    }
+   }
+ }
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index 84e323c..169496a 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -421,5 +421,85 @@
+     "openSettings": "打开设置",
+     "selectLanguage": "选择语言",
+     "toggleNavigation": "切换导航"
++  },
++  "kiro": {
++    "brand": {
++      "name": "Kiro Gateway",
++      "tagline": "AI Gateway",
++      "poc": "PoC"
++    },
++    "nav": {
++      "overview": "Overview",
++      "guardrails": "AI Guardrails",
++      "rules": "Rules",
++      "activity": "Activity",
++      "tester": "Prompt tester",
++      "observability": "Observability",
++      "traffic": "Traffic",
++      "latency": "Latency",
++      "usage": "Usage",
++      "traces": "Traces",
++      "gateway": "Gateway",
++      "collapse": "Collapse sidebar",
++      "expand": "Expand sidebar"
++    },
++    "header": {
++      "healthy": "Gateway healthy",
++      "degraded": "Gateway degraded",
++      "checking": "Checking gateway…",
++      "healthDetail": "Data plane: {{dp}} · Admin API: {{admin}}",
++      "up": "up",
++      "down": "down",
++      "themeLight": "Switch to light theme",
++      "themeDark": "Switch to dark theme",
++      "userMenu": "Account menu",
++      "signedInAs": "Signed in as",
++      "signOut": "Sign out",
++      "adminKey": "APISIX admin key",
++      "docs": "APISIX docs",
++      "classicConsole": "Classic console",
++      "grafana": "Grafana",
++      "search": "Search",
++      "searchHint": "Search pages…",
++      "shortcut": "⌘K"
++    },
++    "page": {
++      "overview": {
++        "title": "Overview",
++        "subtitle": "Guardrails, traffic and usage at a glance"
++      },
++      "rules": {
++        "title": "Rules",
++        "subtitle": "What the gateway blocks before it reaches a model"
++      },
++      "activity": {
++        "title": "Activity",
++        "subtitle": "Every checked prompt, allowed or blocked"
++      },
++      "tester": {
++        "title": "Prompt tester",
++        "subtitle": "Check text against the live rules without sending it anywhere"
++      },
++      "traffic": {
++        "title": "Traffic",
++        "subtitle": "Requests, status codes and bandwidth"
++      },
++      "latency": {
++        "title": "Latency",
++        "subtitle": "End-to-end, upstream and gateway time"
++      },
++      "usage": {
++        "title": "Usage",
++        "subtitle": "Who uses Kiro and the AI route, and how much"
++      },
++      "traces": {
++        "title": "Traces",
++        "subtitle": "Follow a single request through the gateway"
++      }
++    },
++    "comingSoon": {
++      "title": "Arriving in the next build",
++      "body": "This page is part of the new portal and is being built now. The navigation, theme and header around it are final."
++    }
+   }
+ }
+diff --git a/src/main.tsx b/src/main.tsx
+index 7dacffa..37882bc 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -16,9 +16,12 @@
+  */
+ import '@mantine/core/styles.css';
+ import '@mantine/notifications/styles.css';
++import '@fontsource-variable/inter';
++import '@fontsource-variable/jetbrains-mono';
+ import './styles/global.css';
++import './kiro/portal.css';
+ 
+-import { createTheme, MantineProvider } from '@mantine/core';
++import { MantineProvider } from '@mantine/core';
+ import { ModalsProvider } from '@mantine/modals';
+ import { Notifications } from '@mantine/notifications';
+ import { QueryClientProvider } from '@tanstack/react-query';
+@@ -27,8 +30,9 @@ import { StrictMode } from 'react';
+ import ReactDOM from 'react-dom/client';
+ 
+ import { queryClient, router } from './config/global';
++import { portalCssVariables, portalTheme } from './kiro/theme';
+ 
+-const theme = createTheme({});
++const theme = portalTheme;
+ 
+ // Render the app
+ const rootElement = document.getElementById('root')!;
+@@ -36,7 +40,11 @@ if (!rootElement.innerHTML) {
+   const root = ReactDOM.createRoot(rootElement);
+   root.render(
+     <StrictMode>
+-      <MantineProvider theme={theme}>
++      <MantineProvider
++        theme={theme}
++        defaultColorScheme="dark"
++        cssVariablesResolver={portalCssVariables}
++      >
+         <Notifications position="top-right" autoClose={5000} limit={5} />
+         <QueryClientProvider client={queryClient}>
+           <ModalsProvider>
+diff --git a/src/routeTree.gen.ts b/src/routeTree.gen.ts
+index 6172e82..99f0fc9 100644
+--- a/src/routeTree.gen.ts
++++ b/src/routeTree.gen.ts
+@@ -9,6 +9,7 @@
+ // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
+ 
+ import { Route as rootRouteImport } from './routes/__root'
++import { Route as OverviewRouteImport } from './routes/overview'
+ import { Route as IndexRouteImport } from './routes/index'
+ import { Route as UpstreamsIndexRouteImport } from './routes/upstreams/index'
+ import { Route as Stream_routesIndexRouteImport } from './routes/stream_routes/index'
+@@ -30,9 +31,16 @@ import { Route as SecretsAddRouteImport } from './routes/secrets/add'
+ import { Route as RoutesAddRouteImport } from './routes/routes/add'
+ import { Route as ProtosAddRouteImport } from './routes/protos/add'
+ import { Route as Plugin_configsAddRouteImport } from './routes/plugin_configs/add'
++import { Route as ObservabilityUsageRouteImport } from './routes/observability/usage'
++import { Route as ObservabilityTrafficRouteImport } from './routes/observability/traffic'
++import { Route as ObservabilityLatencyRouteImport } from './routes/observability/latency'
++import { Route as GuardrailsTesterRouteImport } from './routes/guardrails/tester'
++import { Route as GuardrailsActivityRouteImport } from './routes/guardrails/activity'
+ import { Route as Global_rulesAddRouteImport } from './routes/global_rules/add'
+ import { Route as ConsumersAddRouteImport } from './routes/consumers/add'
+ import { Route as Consumer_groupsAddRouteImport } from './routes/consumer_groups/add'
++import { Route as ObservabilityTracesIndexRouteImport } from './routes/observability/traces/index'
++import { Route as GuardrailsRulesIndexRouteImport } from './routes/guardrails/rules/index'
+ import { Route as UpstreamsDetailIdRouteImport } from './routes/upstreams/detail.$id'
+ import { Route as Stream_routesDetailIdRouteImport } from './routes/stream_routes/detail.$id'
+ import { Route as SslsDetailIdRouteImport } from './routes/ssls/detail.$id'
+@@ -56,6 +64,11 @@ import { Route as ServicesDetailIdStream_routesDetailRouteIdRouteImport } from '
+ import { Route as ServicesDetailIdRoutesDetailRouteIdRouteImport } from './routes/services/detail.$id/routes/detail.$routeId'
+ import { Route as ConsumersDetailUsernameCredentialsDetailIdRouteImport } from './routes/consumers/detail.$username/credentials/detail.$id'
+ 
++const OverviewRoute = OverviewRouteImport.update({
++  id: '/overview',
++  path: '/overview',
++  getParentRoute: () => rootRouteImport,
++} as any)
+ const IndexRoute = IndexRouteImport.update({
+   id: '/',
+   path: '/',
+@@ -161,6 +174,31 @@ const Plugin_configsAddRoute = Plugin_configsAddRouteImport.update({
+   path: '/plugin_configs/add',
+   getParentRoute: () => rootRouteImport,
+ } as any)
++const ObservabilityUsageRoute = ObservabilityUsageRouteImport.update({
++  id: '/observability/usage',
++  path: '/observability/usage',
++  getParentRoute: () => rootRouteImport,
++} as any)
++const ObservabilityTrafficRoute = ObservabilityTrafficRouteImport.update({
++  id: '/observability/traffic',
++  path: '/observability/traffic',
++  getParentRoute: () => rootRouteImport,
++} as any)
++const ObservabilityLatencyRoute = ObservabilityLatencyRouteImport.update({
++  id: '/observability/latency',
++  path: '/observability/latency',
++  getParentRoute: () => rootRouteImport,
++} as any)
++const GuardrailsTesterRoute = GuardrailsTesterRouteImport.update({
++  id: '/guardrails/tester',
++  path: '/guardrails/tester',
++  getParentRoute: () => rootRouteImport,
++} as any)
++const GuardrailsActivityRoute = GuardrailsActivityRouteImport.update({
++  id: '/guardrails/activity',
++  path: '/guardrails/activity',
++  getParentRoute: () => rootRouteImport,
++} as any)
+ const Global_rulesAddRoute = Global_rulesAddRouteImport.update({
+   id: '/global_rules/add',
+   path: '/global_rules/add',
+@@ -176,6 +214,17 @@ const Consumer_groupsAddRoute = Consumer_groupsAddRouteImport.update({
+   path: '/consumer_groups/add',
+   getParentRoute: () => rootRouteImport,
+ } as any)
++const ObservabilityTracesIndexRoute =
++  ObservabilityTracesIndexRouteImport.update({
++    id: '/observability/traces/',
++    path: '/observability/traces/',
++    getParentRoute: () => rootRouteImport,
++  } as any)
++const GuardrailsRulesIndexRoute = GuardrailsRulesIndexRouteImport.update({
++  id: '/guardrails/rules/',
++  path: '/guardrails/rules/',
++  getParentRoute: () => rootRouteImport,
++} as any)
+ const UpstreamsDetailIdRoute = UpstreamsDetailIdRouteImport.update({
+   id: '/upstreams/detail/$id',
+   path: '/upstreams/detail/$id',
+@@ -299,9 +348,15 @@ const ConsumersDetailUsernameCredentialsDetailIdRoute =
+ 
+ export interface FileRoutesByFullPath {
+   '/': typeof IndexRoute
++  '/overview': typeof OverviewRoute
+   '/consumer_groups/add': typeof Consumer_groupsAddRoute
+   '/consumers/add': typeof ConsumersAddRoute
+   '/global_rules/add': typeof Global_rulesAddRoute
++  '/guardrails/activity': typeof GuardrailsActivityRoute
++  '/guardrails/tester': typeof GuardrailsTesterRoute
++  '/observability/latency': typeof ObservabilityLatencyRoute
++  '/observability/traffic': typeof ObservabilityTrafficRoute
++  '/observability/usage': typeof ObservabilityUsageRoute
+   '/plugin_configs/add': typeof Plugin_configsAddRoute
+   '/protos/add': typeof ProtosAddRoute
+   '/routes/add': typeof RoutesAddRoute
+@@ -332,6 +387,8 @@ export interface FileRoutesByFullPath {
+   '/ssls/detail/$id': typeof SslsDetailIdRoute
+   '/stream_routes/detail/$id': typeof Stream_routesDetailIdRoute
+   '/upstreams/detail/$id': typeof UpstreamsDetailIdRoute
++  '/guardrails/rules/': typeof GuardrailsRulesIndexRoute
++  '/observability/traces/': typeof ObservabilityTracesIndexRoute
+   '/secrets/detail/$manager/$id': typeof SecretsDetailManagerIdRoute
+   '/consumers/detail/$username/': typeof ConsumersDetailUsernameIndexRoute
+   '/services/detail/$id/': typeof ServicesDetailIdIndexRoute
+@@ -347,9 +404,15 @@ export interface FileRoutesByFullPath {
+ }
+ export interface FileRoutesByTo {
+   '/': typeof IndexRoute
++  '/overview': typeof OverviewRoute
+   '/consumer_groups/add': typeof Consumer_groupsAddRoute
+   '/consumers/add': typeof ConsumersAddRoute
+   '/global_rules/add': typeof Global_rulesAddRoute
++  '/guardrails/activity': typeof GuardrailsActivityRoute
++  '/guardrails/tester': typeof GuardrailsTesterRoute
++  '/observability/latency': typeof ObservabilityLatencyRoute
++  '/observability/traffic': typeof ObservabilityTrafficRoute
++  '/observability/usage': typeof ObservabilityUsageRoute
+   '/plugin_configs/add': typeof Plugin_configsAddRoute
+   '/protos/add': typeof ProtosAddRoute
+   '/routes/add': typeof RoutesAddRoute
+@@ -378,6 +441,8 @@ export interface FileRoutesByTo {
+   '/ssls/detail/$id': typeof SslsDetailIdRoute
+   '/stream_routes/detail/$id': typeof Stream_routesDetailIdRoute
+   '/upstreams/detail/$id': typeof UpstreamsDetailIdRoute
++  '/guardrails/rules': typeof GuardrailsRulesIndexRoute
++  '/observability/traces': typeof ObservabilityTracesIndexRoute
+   '/secrets/detail/$manager/$id': typeof SecretsDetailManagerIdRoute
+   '/consumers/detail/$username': typeof ConsumersDetailUsernameIndexRoute
+   '/services/detail/$id': typeof ServicesDetailIdIndexRoute
+@@ -394,9 +459,15 @@ export interface FileRoutesByTo {
+ export interface FileRoutesById {
+   __root__: typeof rootRouteImport
+   '/': typeof IndexRoute
++  '/overview': typeof OverviewRoute
+   '/consumer_groups/add': typeof Consumer_groupsAddRoute
+   '/consumers/add': typeof ConsumersAddRoute
+   '/global_rules/add': typeof Global_rulesAddRoute
++  '/guardrails/activity': typeof GuardrailsActivityRoute
++  '/guardrails/tester': typeof GuardrailsTesterRoute
++  '/observability/latency': typeof ObservabilityLatencyRoute
++  '/observability/traffic': typeof ObservabilityTrafficRoute
++  '/observability/usage': typeof ObservabilityUsageRoute
+   '/plugin_configs/add': typeof Plugin_configsAddRoute
+   '/protos/add': typeof ProtosAddRoute
+   '/routes/add': typeof RoutesAddRoute
+@@ -427,6 +498,8 @@ export interface FileRoutesById {
+   '/ssls/detail/$id': typeof SslsDetailIdRoute
+   '/stream_routes/detail/$id': typeof Stream_routesDetailIdRoute
+   '/upstreams/detail/$id': typeof UpstreamsDetailIdRoute
++  '/guardrails/rules/': typeof GuardrailsRulesIndexRoute
++  '/observability/traces/': typeof ObservabilityTracesIndexRoute
+   '/secrets/detail/$manager/$id': typeof SecretsDetailManagerIdRoute
+   '/consumers/detail/$username/': typeof ConsumersDetailUsernameIndexRoute
+   '/services/detail/$id/': typeof ServicesDetailIdIndexRoute
+@@ -444,9 +517,15 @@ export interface FileRouteTypes {
+   fileRoutesByFullPath: FileRoutesByFullPath
+   fullPaths:
+     | '/'
++    | '/overview'
+     | '/consumer_groups/add'
+     | '/consumers/add'
+     | '/global_rules/add'
++    | '/guardrails/activity'
++    | '/guardrails/tester'
++    | '/observability/latency'
++    | '/observability/traffic'
++    | '/observability/usage'
+     | '/plugin_configs/add'
+     | '/protos/add'
+     | '/routes/add'
+@@ -477,6 +556,8 @@ export interface FileRouteTypes {
+     | '/ssls/detail/$id'
+     | '/stream_routes/detail/$id'
+     | '/upstreams/detail/$id'
++    | '/guardrails/rules/'
++    | '/observability/traces/'
+     | '/secrets/detail/$manager/$id'
+     | '/consumers/detail/$username/'
+     | '/services/detail/$id/'
+@@ -492,9 +573,15 @@ export interface FileRouteTypes {
+   fileRoutesByTo: FileRoutesByTo
+   to:
+     | '/'
++    | '/overview'
+     | '/consumer_groups/add'
+     | '/consumers/add'
+     | '/global_rules/add'
++    | '/guardrails/activity'
++    | '/guardrails/tester'
++    | '/observability/latency'
++    | '/observability/traffic'
++    | '/observability/usage'
+     | '/plugin_configs/add'
+     | '/protos/add'
+     | '/routes/add'
+@@ -523,6 +610,8 @@ export interface FileRouteTypes {
+     | '/ssls/detail/$id'
+     | '/stream_routes/detail/$id'
+     | '/upstreams/detail/$id'
++    | '/guardrails/rules'
++    | '/observability/traces'
+     | '/secrets/detail/$manager/$id'
+     | '/consumers/detail/$username'
+     | '/services/detail/$id'
+@@ -538,9 +627,15 @@ export interface FileRouteTypes {
+   id:
+     | '__root__'
+     | '/'
++    | '/overview'
+     | '/consumer_groups/add'
+     | '/consumers/add'
+     | '/global_rules/add'
++    | '/guardrails/activity'
++    | '/guardrails/tester'
++    | '/observability/latency'
++    | '/observability/traffic'
++    | '/observability/usage'
+     | '/plugin_configs/add'
+     | '/protos/add'
+     | '/routes/add'
+@@ -571,6 +666,8 @@ export interface FileRouteTypes {
+     | '/ssls/detail/$id'
+     | '/stream_routes/detail/$id'
+     | '/upstreams/detail/$id'
++    | '/guardrails/rules/'
++    | '/observability/traces/'
+     | '/secrets/detail/$manager/$id'
+     | '/consumers/detail/$username/'
+     | '/services/detail/$id/'
+@@ -587,9 +684,15 @@ export interface FileRouteTypes {
+ }
+ export interface RootRouteChildren {
+   IndexRoute: typeof IndexRoute
++  OverviewRoute: typeof OverviewRoute
+   Consumer_groupsAddRoute: typeof Consumer_groupsAddRoute
+   ConsumersAddRoute: typeof ConsumersAddRoute
+   Global_rulesAddRoute: typeof Global_rulesAddRoute
++  GuardrailsActivityRoute: typeof GuardrailsActivityRoute
++  GuardrailsTesterRoute: typeof GuardrailsTesterRoute
++  ObservabilityLatencyRoute: typeof ObservabilityLatencyRoute
++  ObservabilityTrafficRoute: typeof ObservabilityTrafficRoute
++  ObservabilityUsageRoute: typeof ObservabilityUsageRoute
+   Plugin_configsAddRoute: typeof Plugin_configsAddRoute
+   ProtosAddRoute: typeof ProtosAddRoute
+   RoutesAddRoute: typeof RoutesAddRoute
+@@ -620,11 +723,20 @@ export interface RootRouteChildren {
+   SslsDetailIdRoute: typeof SslsDetailIdRoute
+   Stream_routesDetailIdRoute: typeof Stream_routesDetailIdRoute
+   UpstreamsDetailIdRoute: typeof UpstreamsDetailIdRoute
++  GuardrailsRulesIndexRoute: typeof GuardrailsRulesIndexRoute
++  ObservabilityTracesIndexRoute: typeof ObservabilityTracesIndexRoute
+   SecretsDetailManagerIdRoute: typeof SecretsDetailManagerIdRoute
+ }
+ 
+ declare module '@tanstack/react-router' {
+   interface FileRoutesByPath {
++    '/overview': {
++      id: '/overview'
++      path: '/overview'
++      fullPath: '/overview'
++      preLoaderRoute: typeof OverviewRouteImport
++      parentRoute: typeof rootRouteImport
++    }
+     '/': {
+       id: '/'
+       path: '/'
+@@ -772,6 +884,41 @@ declare module '@tanstack/react-router' {
+       preLoaderRoute: typeof Plugin_configsAddRouteImport
+       parentRoute: typeof rootRouteImport
+     }
++    '/observability/usage': {
++      id: '/observability/usage'
++      path: '/observability/usage'
++      fullPath: '/observability/usage'
++      preLoaderRoute: typeof ObservabilityUsageRouteImport
++      parentRoute: typeof rootRouteImport
++    }
++    '/observability/traffic': {
++      id: '/observability/traffic'
++      path: '/observability/traffic'
++      fullPath: '/observability/traffic'
++      preLoaderRoute: typeof ObservabilityTrafficRouteImport
++      parentRoute: typeof rootRouteImport
++    }
++    '/observability/latency': {
++      id: '/observability/latency'
++      path: '/observability/latency'
++      fullPath: '/observability/latency'
++      preLoaderRoute: typeof ObservabilityLatencyRouteImport
++      parentRoute: typeof rootRouteImport
++    }
++    '/guardrails/tester': {
++      id: '/guardrails/tester'
++      path: '/guardrails/tester'
++      fullPath: '/guardrails/tester'
++      preLoaderRoute: typeof GuardrailsTesterRouteImport
++      parentRoute: typeof rootRouteImport
++    }
++    '/guardrails/activity': {
++      id: '/guardrails/activity'
++      path: '/guardrails/activity'
++      fullPath: '/guardrails/activity'
++      preLoaderRoute: typeof GuardrailsActivityRouteImport
++      parentRoute: typeof rootRouteImport
++    }
+     '/global_rules/add': {
+       id: '/global_rules/add'
+       path: '/global_rules/add'
+@@ -793,6 +940,20 @@ declare module '@tanstack/react-router' {
+       preLoaderRoute: typeof Consumer_groupsAddRouteImport
+       parentRoute: typeof rootRouteImport
+     }
++    '/observability/traces/': {
++      id: '/observability/traces/'
++      path: '/observability/traces'
++      fullPath: '/observability/traces/'
++      preLoaderRoute: typeof ObservabilityTracesIndexRouteImport
++      parentRoute: typeof rootRouteImport
++    }
++    '/guardrails/rules/': {
++      id: '/guardrails/rules/'
++      path: '/guardrails/rules'
++      fullPath: '/guardrails/rules/'
++      preLoaderRoute: typeof GuardrailsRulesIndexRouteImport
++      parentRoute: typeof rootRouteImport
++    }
+     '/upstreams/detail/$id': {
+       id: '/upstreams/detail/$id'
+       path: '/upstreams/detail/$id'
+@@ -1001,9 +1162,15 @@ const ServicesDetailIdRouteWithChildren =
+ 
+ const rootRouteChildren: RootRouteChildren = {
+   IndexRoute: IndexRoute,
++  OverviewRoute: OverviewRoute,
+   Consumer_groupsAddRoute: Consumer_groupsAddRoute,
+   ConsumersAddRoute: ConsumersAddRoute,
+   Global_rulesAddRoute: Global_rulesAddRoute,
++  GuardrailsActivityRoute: GuardrailsActivityRoute,
++  GuardrailsTesterRoute: GuardrailsTesterRoute,
++  ObservabilityLatencyRoute: ObservabilityLatencyRoute,
++  ObservabilityTrafficRoute: ObservabilityTrafficRoute,
++  ObservabilityUsageRoute: ObservabilityUsageRoute,
+   Plugin_configsAddRoute: Plugin_configsAddRoute,
+   ProtosAddRoute: ProtosAddRoute,
+   RoutesAddRoute: RoutesAddRoute,
+@@ -1034,6 +1201,8 @@ const rootRouteChildren: RootRouteChildren = {
+   SslsDetailIdRoute: SslsDetailIdRoute,
+   Stream_routesDetailIdRoute: Stream_routesDetailIdRoute,
+   UpstreamsDetailIdRoute: UpstreamsDetailIdRoute,
++  GuardrailsRulesIndexRoute: GuardrailsRulesIndexRoute,
++  ObservabilityTracesIndexRoute: ObservabilityTracesIndexRoute,
+   SecretsDetailManagerIdRoute: SecretsDetailManagerIdRoute,
+ }
+ export const routeTree = rootRouteImport
+diff --git a/src/routes/__root.tsx b/src/routes/__root.tsx
+index 6834d35..0b264fb 100644
+--- a/src/routes/__root.tsx
++++ b/src/routes/__root.tsx
+@@ -15,7 +15,7 @@
+  * limitations under the License.
+  */
+ import { AppShell } from '@mantine/core';
+-import { useDisclosure } from '@mantine/hooks';
++import { useDisclosure, useLocalStorage } from '@mantine/hooks';
+ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+ import {
+   createRootRoute,
+@@ -26,8 +26,6 @@ import {
+ import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
+ import { I18nextProvider } from 'react-i18next';
+ 
+-import { Header } from '@/components/Header';
+-import { Navbar } from '@/components/Navbar';
+ import { PageError } from '@/components/page/PageError';
+ import { SettingsModal } from '@/components/page/SettingsModal';
+ import {
+@@ -36,27 +34,46 @@ import {
+ } from '@/config/constant';
+ import i18n from '@/config/i18n';
+ import { useDocumentTitle } from '@/hooks/useDocumentTitle';
++import { PortalHeader } from '@/kiro/shell/PortalHeader';
++import { PortalNavbar } from '@/kiro/shell/PortalNavbar';
++import kiroShell from '@/kiro/shell/shell.module.css';
++
++// Kiro portal: grouped sidebar (collapsible to an icon rail) + portal header replace the
++// upstream Header/Navbar (components/Header, components/Navbar are left untouched).
++const NAVBAR_RAIL_WIDTH = 72;
+ 
+ const RootShell = () => {
+-  const [opened, { toggle }] = useDisclosure(false);
++  const [opened, { toggle, close }] = useDisclosure(false);
++  const [railed, setRailed] = useLocalStorage({
++    key: 'kiro:navbar-railed',
++    defaultValue: false,
++  });
+   useDocumentTitle();
+   return (
+     <>
+       <HeadContent />
+       <AppShell
++        layout="alt"
+         header={{ height: APPSHELL_HEADER_HEIGHT }}
+         navbar={{
+-          width: APPSHELL_NAVBAR_WIDTH,
++          width: {
++            base: APPSHELL_NAVBAR_WIDTH,
++            sm: railed ? NAVBAR_RAIL_WIDTH : APPSHELL_NAVBAR_WIDTH,
++          },
+           breakpoint: 'sm',
+           collapsed: { mobile: !opened },
+         }}
+-        padding="md"
++        padding="xl"
+       >
+-        <Header opened={opened} toggle={toggle} />
++        <PortalHeader opened={opened} toggle={toggle} />
+ 
+-        <Navbar />
++        <PortalNavbar
++          collapsed={railed}
++          onToggleCollapsed={() => setRailed((v) => !v)}
++          onNavigate={close}
++        />
+ 
+-        <AppShell.Main>
++        <AppShell.Main className={kiroShell.main}>
+           <Outlet />
+         </AppShell.Main>
+       </AppShell>
+diff --git a/src/routes/guardrails/activity.tsx b/src/routes/guardrails/activity.tsx
+new file mode 100644
+index 0000000..e8ce30b
+--- /dev/null
++++ b/src/routes/guardrails/activity.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/guardrails/activity')({
++  component: () => <ComingSoon page="activity" />,
++});
+diff --git a/src/routes/guardrails/rules/index.tsx b/src/routes/guardrails/rules/index.tsx
+new file mode 100644
+index 0000000..8d3a330
+--- /dev/null
++++ b/src/routes/guardrails/rules/index.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/guardrails/rules/')({
++  component: () => <ComingSoon page="rules" />,
++});
+diff --git a/src/routes/guardrails/tester.tsx b/src/routes/guardrails/tester.tsx
+new file mode 100644
+index 0000000..085201e
+--- /dev/null
++++ b/src/routes/guardrails/tester.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/guardrails/tester')({
++  component: () => <ComingSoon page="tester" />,
++});
+diff --git a/src/routes/index.tsx b/src/routes/index.tsx
+index 6a2d33c..97b7490 100644
+--- a/src/routes/index.tsx
++++ b/src/routes/index.tsx
+@@ -20,8 +20,10 @@ import { navRoutes } from '@/config/navRoutes';
+ 
+ export const Route = createFileRoute('/')({
+   beforeLoad: () => {
++    // Kiro portal: land on the Overview; the APISIX pages live under "Gateway".
++    void navRoutes;
+     throw redirect({
+-      to: navRoutes[0].to,
++      to: '/overview',
+     });
+   },
+ });
+diff --git a/src/routes/observability/latency.tsx b/src/routes/observability/latency.tsx
+new file mode 100644
+index 0000000..660acd1
+--- /dev/null
++++ b/src/routes/observability/latency.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/observability/latency')({
++  component: () => <ComingSoon page="latency" />,
++});
+diff --git a/src/routes/observability/traces/index.tsx b/src/routes/observability/traces/index.tsx
+new file mode 100644
+index 0000000..9d0d587
+--- /dev/null
++++ b/src/routes/observability/traces/index.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/observability/traces/')({
++  component: () => <ComingSoon page="traces" />,
++});
+diff --git a/src/routes/observability/traffic.tsx b/src/routes/observability/traffic.tsx
+new file mode 100644
+index 0000000..e37af4e
+--- /dev/null
++++ b/src/routes/observability/traffic.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/observability/traffic')({
++  component: () => <ComingSoon page="traffic" />,
++});
+diff --git a/src/routes/observability/usage.tsx b/src/routes/observability/usage.tsx
+new file mode 100644
+index 0000000..572c9bf
+--- /dev/null
++++ b/src/routes/observability/usage.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/observability/usage')({
++  component: () => <ComingSoon page="usage" />,
++});
+diff --git a/src/routes/overview.tsx b/src/routes/overview.tsx
+new file mode 100644
+index 0000000..7233e2e
+--- /dev/null
++++ b/src/routes/overview.tsx
+@@ -0,0 +1,23 @@
++/**
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements.  See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License.  You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++import { createFileRoute } from '@tanstack/react-router';
++
++import { ComingSoon } from '@/kiro/shell/Page';
++
++export const Route = createFileRoute('/overview')({
++  component: () => <ComingSoon page="overview" />,
++});

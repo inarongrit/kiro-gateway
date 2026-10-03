@@ -1,0 +1,10 @@
+{
+  "name": "q.us-east-1.amazonaws.com",
+  "desc": "Intercept q.us-east-1.amazonaws.com: TLS terminated at APISIX, re-encrypted upstream",
+  "hosts": [
+    "q.us-east-1.amazonaws.com"
+  ],
+  "uri": "/*",
+  "upstream_id": "q-us-east-1-amazonaws-com",
+  "plugin_config_id": "kiro-observe"
+}

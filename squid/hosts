@@ -1,0 +1,5 @@
+# Hostnames to intercept -> APISIX. Managed by scripts/intercept-host.sh.
+# Format: 172.30.0.10 <hostname>
+172.30.0.10 q.us-east-1.amazonaws.com
+172.30.0.10 runtime.us-east-1.kiro.dev
+172.30.0.10 management.us-east-1.kiro.dev

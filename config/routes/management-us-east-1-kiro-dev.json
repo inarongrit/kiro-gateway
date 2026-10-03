@@ -1,0 +1,10 @@
+{
+  "name": "management.us-east-1.kiro.dev",
+  "desc": "Intercept management.us-east-1.kiro.dev: TLS terminated at APISIX, re-encrypted upstream",
+  "hosts": [
+    "management.us-east-1.kiro.dev"
+  ],
+  "uri": "/*",
+  "upstream_id": "management-us-east-1-kiro-dev",
+  "plugin_config_id": "kiro-observe"
+}

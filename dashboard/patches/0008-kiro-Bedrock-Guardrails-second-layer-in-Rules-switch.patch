@@ -1,0 +1,553 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 18:22:31 +0000
+Subject: [PATCH] kiro: Bedrock Guardrails second layer in Rules (switch,
+ timeout, fail mode) and tester (per-layer verdict)
+
+---
+ src/kiro/guardrails/api.ts                    | 23 +++++++-
+ src/kiro/guardrails/format.ts                 | 10 ++++
+ src/kiro/guardrails/rules/ProtectionsCard.tsx | 52 ++++++++++++++++++-
+ src/kiro/guardrails/rules/ReviewModal.tsx     |  2 +
+ src/kiro/guardrails/rules/draft.ts            |  4 ++
+ src/kiro/guardrails/tester/TesterPage.tsx     | 24 ++++++---
+ src/locales/de/common.json                    | 30 +++++++++--
+ src/locales/en/common.json                    | 30 +++++++++--
+ src/locales/es/common.json                    | 30 +++++++++--
+ src/locales/tr/common.json                    | 30 +++++++++--
+ src/locales/zh/common.json                    | 30 +++++++++--
+ 11 files changed, 237 insertions(+), 28 deletions(-)
+
+diff --git a/src/kiro/guardrails/api.ts b/src/kiro/guardrails/api.ts
+index d81f1dd..16ce78f 100644
+--- a/src/kiro/guardrails/api.ts
++++ b/src/kiro/guardrails/api.ts
+@@ -40,6 +40,8 @@ export type GuardrailSwitches = {
+   kiro_rate_limit: { enabled: boolean; requests: number; window_seconds: number };
+   ai_prompt_guard: { enabled: boolean };
+   ai_token_budget: { enabled: boolean; tokens: number; window_seconds: number };
++  /** Second layer: Amazon Bedrock Guardrails via the ml-guard service (Kiro path only). */
++  kiro_ml_guard: { enabled: boolean; timeout_ms: number; fail_mode: 'open' | 'closed' };
+ };
+ 
+ export type GuardrailConfig = {
+@@ -100,7 +102,26 @@ export type TestResult = {
+   /** True when the Kiro guard's normalisation (full-width / Thai digits, zero-width chars) changed the text. */
+   normalised: boolean;
+   /** The server never returns the raw match: a masked preview plus UTF-16 offsets into the sent text. */
+-  matches: { id: string; label: string; matched: boolean; preview?: string; start?: number; length?: number }[];
++  matches: {
++    id: string;
++    label: string;
++    matched: boolean;
++    preview?: string;
++    start?: number;
++    length?: number;
++    /** "ml" = found by the Bedrock layer; absent = a regex rule. */
++    layer?: 'ml';
++  }[];
++  /** What the second (Bedrock) layer decided, as the gateway would run it. */
++  ml?: {
++    enabled: boolean;
++    available?: boolean;
++    action?: 'allow' | 'block';
++    policies?: string[];
++    latency_ms?: number;
++    fail_mode?: 'open' | 'closed';
++    error?: string;
++  };
+ };
+ 
+ export type PatternCheck = { valid: boolean; error: string | null };
+diff --git a/src/kiro/guardrails/format.ts b/src/kiro/guardrails/format.ts
+index 1de4474..5f748ee 100644
+--- a/src/kiro/guardrails/format.ts
++++ b/src/kiro/guardrails/format.ts
+@@ -31,6 +31,16 @@ export const useRuleLabel = () => {
+       if (m.has(id)) return m.get(id)!;
+       if (id === 'prompt-guard') return t('kiro.guard.rule.promptGuard');
+       if (id === 'unknown') return t('kiro.guard.rule.unknown');
++      if (id === 'uninspectable') return t('kiro.guard.rule.uninspectable');
++      if (id === 'ml-unavailable') return t('kiro.guard.rule.mlUnavailable');
++      if (id.startsWith('bedrock:')) {
++        // bedrock:pii:NAME -> "Bedrock · Name"; bedrock:topic:Data exfiltration -> "Bedrock · Data exfiltration"
++        const what = id.split(':').slice(2).join(':') || id.split(':')[1] || '';
++        const pretty = /^[A-Z_]+$/.test(what)
++          ? what.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
++          : what;
++        return t('kiro.guard.rule.bedrock', { what: pretty });
++      }
+       // Only call it removed once the current rules are known (not while they load).
+       return data ? t('kiro.guard.rule.removed', { id }) : id;
+     };
+diff --git a/src/kiro/guardrails/rules/ProtectionsCard.tsx b/src/kiro/guardrails/rules/ProtectionsCard.tsx
+index 62a07ce..e09d9ab 100644
+--- a/src/kiro/guardrails/rules/ProtectionsCard.tsx
++++ b/src/kiro/guardrails/rules/ProtectionsCard.tsx
+@@ -15,7 +15,7 @@
+  * limitations under the License.
+  */
+ /** Protections card: the four guardrail switches plus the block message. */
+-import { Group, NumberInput, Stack, Switch, Text, Textarea } from '@mantine/core';
++import { Badge, Group, NumberInput, SegmentedControl, Stack, Switch, Text, Textarea } from '@mantine/core';
+ import type { FC } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -86,6 +86,56 @@ export const ProtectionsCard: FC<{ draft: GuardrailConfig; patch: Patch }> = ({
+           </Group>
+         )}
+ 
++        <Row
++          title={t('kiro.rules.protection.kiro_ml_guard.name')}
++          help={t('kiro.rules.protection.kiro_ml_guard.help')}
++        >
++          <Switch
++            aria-label={t('kiro.rules.protection.kiro_ml_guard.name')}
++            checked={g.kiro_ml_guard.enabled}
++            onChange={(e) => setSwitch('kiro_ml_guard', { enabled: e.currentTarget.checked })}
++          />
++        </Row>
++        {g.kiro_ml_guard.enabled && (
++          <Stack gap="xs" pl="md">
++            <Group gap="md" wrap="wrap" align="flex-end">
++              <NumberInput
++                label={t('kiro.rules.protection.timeoutMs')}
++                min={200}
++                max={10000}
++                step={100}
++                w={160}
++                value={g.kiro_ml_guard.timeout_ms}
++                onChange={(v) => setSwitch('kiro_ml_guard', { timeout_ms: Number(v) || 0 })}
++              />
++              <Stack gap={4}>
++                <Text size="sm" fw={500}>
++                  {t('kiro.rules.protection.failMode')}
++                </Text>
++                <SegmentedControl
++                  aria-label={t('kiro.rules.protection.failMode')}
++                  value={g.kiro_ml_guard.fail_mode}
++                  onChange={(v) => setSwitch('kiro_ml_guard', { fail_mode: v as 'open' | 'closed' })}
++                  data={[
++                    { value: 'open', label: t('kiro.rules.protection.failOpen') },
++                    { value: 'closed', label: t('kiro.rules.protection.failClosed') },
++                  ]}
++                />
++              </Stack>
++            </Group>
++            <Text size="xs" c="dimmed">
++              {g.kiro_ml_guard.fail_mode === 'open'
++                ? t('kiro.rules.protection.failOpenHelp')
++                : t('kiro.rules.protection.failClosedHelp')}
++            </Text>
++            <Group gap={6}>
++              <Badge variant="light" color="gray" radius="sm">
++                {t('kiro.rules.protection.mlCost')}
++              </Badge>
++            </Group>
++          </Stack>
++        )}
++
+         <Row title={t('kiro.rules.protection.ai_prompt_guard.name')} help={t('kiro.rules.protection.ai_prompt_guard.help')}>
+           <Switch
+             aria-label={t('kiro.rules.protection.ai_prompt_guard.name')}
+diff --git a/src/kiro/guardrails/rules/ReviewModal.tsx b/src/kiro/guardrails/rules/ReviewModal.tsx
+index 5cf1ba3..dcee970 100644
+--- a/src/kiro/guardrails/rules/ReviewModal.tsx
++++ b/src/kiro/guardrails/rules/ReviewModal.tsx
+@@ -43,6 +43,8 @@ const FieldChange: FC<{ change: RuleFieldChange }> = ({ change }) => {
+       requests: t('kiro.rules.field.requests'),
+       window_seconds: t('kiro.rules.field.window_seconds'),
+       tokens: t('kiro.rules.field.tokens'),
++      timeout_ms: t('kiro.rules.field.timeout_ms'),
++      fail_mode: t('kiro.rules.field.fail_mode'),
+     }[String(change.field)] ?? String(change.field);
+   return (
+     <Text size="sm">
+diff --git a/src/kiro/guardrails/rules/draft.ts b/src/kiro/guardrails/rules/draft.ts
+index 3fb0ce3..38f00b5 100644
+--- a/src/kiro/guardrails/rules/draft.ts
++++ b/src/kiro/guardrails/rules/draft.ts
+@@ -17,6 +17,8 @@
+ /** Local draft of the guardrail config and the diff between saved and draft. */
+ import type { GuardrailConfig, GuardrailSwitches, Rule } from '../api';
+ 
++const ML_DEFAULT: GuardrailSwitches['kiro_ml_guard'] = { enabled: false, timeout_ms: 1500, fail_mode: 'open' };
++
+ /** Deep clone the editable part of the config so edits never mutate the query cache. */
+ export const cloneConfig = (c: GuardrailConfig): GuardrailConfig => ({
+   block_message: c.block_message,
+@@ -26,6 +28,8 @@ export const cloneConfig = (c: GuardrailConfig): GuardrailConfig => ({
+     kiro_rate_limit: { ...c.guardrails.kiro_rate_limit },
+     ai_prompt_guard: { ...c.guardrails.ai_prompt_guard },
+     ai_token_budget: { ...c.guardrails.ai_token_budget },
++    // Configs saved before the second layer existed have no kiro_ml_guard key.
++    kiro_ml_guard: { ...ML_DEFAULT, ...(c.guardrails.kiro_ml_guard as Partial<GuardrailSwitches['kiro_ml_guard']> | undefined) },
+   },
+ });
+ 
+diff --git a/src/kiro/guardrails/tester/TesterPage.tsx b/src/kiro/guardrails/tester/TesterPage.tsx
+index cb08cd4..4833277 100644
+--- a/src/kiro/guardrails/tester/TesterPage.tsx
++++ b/src/kiro/guardrails/tester/TesterPage.tsx
+@@ -44,7 +44,7 @@ import IconFlask from '~icons/tabler/flask';
+ import { TESTER_PREFILL_KEY } from '../activity/ActivityDrawer';
+ import type { GuardPath, TestResult } from '../api';
+ import { testPrompt } from '../api';
+-import { fmtNumber } from '../format';
++import { fmtNumber, useRuleLabel } from '../format';
+ import { ErrorState } from '../ui';
+ 
+ const MAX_CHARS = 20000;
+@@ -210,6 +210,7 @@ const ResultView = ({
+   matchStrings: string[];
+ }) => {
+   const { t, i18n } = useTranslation();
++  const ruleLabel = useRuleLabel();
+   const blocked = result.would_block;
+ 
+   return (
+@@ -229,9 +230,20 @@ const ResultView = ({
+         </Alert>
+       )}
+ 
+-      <Text size="sm" c="dimmed">
+-        {t('kiro.tester.rulesChecked', { count: fmtNumber(result.rules_checked, i18n.language) })}
+-      </Text>
++      <Stack gap={4}>
++        <Text size="sm" c="dimmed">
++          {t('kiro.tester.layer1', { count: fmtNumber(result.rules_checked, i18n.language) })}
++        </Text>
++        <Text size="sm" c="dimmed">
++          {!result.ml?.enabled
++            ? t('kiro.tester.layer2Off')
++            : !result.ml.available
++              ? t(result.ml.fail_mode === 'closed' ? 'kiro.tester.layer2DownClosed' : 'kiro.tester.layer2DownOpen')
++              : t(result.ml.action === 'block' ? 'kiro.tester.layer2Blocked' : 'kiro.tester.layer2Allowed', {
++                  ms: fmtNumber(result.ml.latency_ms ?? 0, i18n.language),
++                })}
++        </Text>
++      </Stack>
+ 
+       {result.matches.length > 0 && (
+         <Stack gap={6}>
+@@ -240,8 +252,8 @@ const ResultView = ({
+           </Text>
+           {result.matches.map((m) => (
+             <Group key={m.id} gap="xs" wrap="nowrap">
+-              <Badge color="red" variant="light" radius="sm">
+-                {m.label}
++              <Badge color={m.layer === 'ml' ? 'grape' : 'red'} variant="light" radius="sm">
++                {ruleLabel(m.id) || m.label}
+               </Badge>
+               {m.preview && (
+                 <Mark color="red">
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 4428838..c6a89a5 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -515,7 +515,10 @@
+       "rule": {
+         "promptGuard": "Prompt-Schutz der KI-Route",
+         "unknown": "Frühere Blockierung (Regel nicht erfasst)",
+-        "removed": "{{id}} (Regel inzwischen entfernt)"
++        "removed": "{{id}} (Regel inzwischen entfernt)",
++        "bedrock": "Bedrock · {{what}}",
++        "uninspectable": "Anfrage konnte nicht geprüft werden",
++        "mlUnavailable": "Zweite Ebene nicht verfügbar"
+       },
+       "loadError": "Daten konnten nicht geladen werden",
+       "pathHint": {
+@@ -603,7 +606,13 @@
+       "idle": {
+         "title": "Noch nichts geprüft",
+         "body": "Gib einen Prompt ein und wähle eine Route, dann prüfe ihn gegen die aktiven Regeln. Der Prompt wird nie an das Modell gesendet."
+-      }
++      },
++      "layer1": "Ebene 1 · {{count}} Sperrregeln geprüft",
++      "layer2Off": "Ebene 2 · Bedrock Guardrails ist aus",
++      "layer2Allowed": "Ebene 2 · Bedrock Guardrails hat nichts gefunden ({{ms}} ms)",
++      "layer2Blocked": "Ebene 2 · Bedrock Guardrails würde sperren ({{ms}} ms)",
++      "layer2DownOpen": "Ebene 2 · Bedrock Guardrails nicht verfügbar; das Gateway würde zulassen (fail open)",
++      "layer2DownClosed": "Ebene 2 · Bedrock Guardrails nicht verfügbar; das Gateway würde sperren (fail closed)"
+     },
+     "overview": {
+       "title": "Übersicht",
+@@ -777,7 +786,18 @@
+         "ai_token_budget": {
+           "name": "KI-Token-Budget",
+           "help": "Die Anzahl der Tokens begrenzen, die ein Benutzer in einem Zeitfenster auf der KI-Route verbraucht."
+-        }
++        },
++        "kiro_ml_guard": {
++          "name": "Bedrock Guardrails (zweite Ebene)",
++          "help": "Nach den Sperrregeln prüft Amazon Bedrock den Prompt auf personenbezogene Daten (Namen, Adressen, Telefonnummern, Bankdaten, Passwörter), Prompt-Angriffe und Datenabfluss. Kostet etwa 0,5 s pro Kiro-Chat."
++        },
++        "timeoutMs": "Zeitlimit (ms)",
++        "failMode": "Wenn Bedrock langsam oder nicht erreichbar ist",
++        "failOpen": "Zulassen (fail open)",
++        "failClosed": "Sperren (fail closed)",
++        "failOpenHelp": "Prompts werden weiter durch die Sperrregeln geprüft; nur die Bedrock-Prüfung entfällt.",
++        "failClosedHelp": "Jeder Kiro-Chat wird gesperrt, solange Bedrock nicht rechtzeitig antwortet.",
++        "mlCost": "Von AWS pro Prüfung abgerechnet (etwa 0,40 $ pro 1.000 kurze Prompts)"
+       },
+       "field": {
+         "label": "Name",
+@@ -788,7 +808,9 @@
+         "enabled": "Aktiviert",
+         "requests": "Anfragen",
+         "window_seconds": "Zeitfenster (Sekunden)",
+-        "tokens": "Tokens"
++        "tokens": "Tokens",
++        "timeout_ms": "Zeitlimit (ms)",
++        "fail_mode": "Fehlerverhalten"
+       },
+       "history": {
+         "title": "Änderungsverlauf",
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index 884c618..5008450 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -515,7 +515,10 @@
+       "rule": {
+         "promptGuard": "AI route prompt guard",
+         "unknown": "Earlier block (rule not recorded)",
+-        "removed": "{{id}} (rule since removed)"
++        "removed": "{{id}} (rule since removed)",
++        "bedrock": "Bedrock · {{what}}",
++        "uninspectable": "Request could not be inspected",
++        "mlUnavailable": "Second layer unavailable"
+       },
+       "loadError": "Could not load data",
+       "pathHint": {
+@@ -603,7 +606,13 @@
+       "idle": {
+         "title": "Nothing checked yet",
+         "body": "Enter a prompt and choose a route, then check it against the live rules. The prompt is never sent to the model."
+-      }
++      },
++      "layer1": "Layer 1 · {{count}} block rules checked",
++      "layer2Off": "Layer 2 · Bedrock Guardrails is off",
++      "layer2Allowed": "Layer 2 · Bedrock Guardrails found nothing ({{ms}} ms)",
++      "layer2Blocked": "Layer 2 · Bedrock Guardrails would block ({{ms}} ms)",
++      "layer2DownOpen": "Layer 2 · Bedrock Guardrails unavailable; the gateway would allow (fail open)",
++      "layer2DownClosed": "Layer 2 · Bedrock Guardrails unavailable; the gateway would block (fail closed)"
+     },
+     "overview": {
+       "title": "Overview",
+@@ -777,7 +786,18 @@
+         "ai_token_budget": {
+           "name": "AI token budget",
+           "help": "Cap the number of tokens a user can spend on the AI route in a time window."
+-        }
++        },
++        "kiro_ml_guard": {
++          "name": "Bedrock Guardrails (second layer)",
++          "help": "After the block rules pass, Amazon Bedrock checks the prompt for personal data (names, addresses, phones, bank details, passwords), prompt attacks and data exfiltration. Adds about 0.5 s per Kiro chat."
++        },
++        "timeoutMs": "Timeout (ms)",
++        "failMode": "If Bedrock is slow or unavailable",
++        "failOpen": "Allow (fail open)",
++        "failClosed": "Block (fail closed)",
++        "failOpenHelp": "Prompts are still checked by the block rules; only the Bedrock check is skipped.",
++        "failClosedHelp": "Every Kiro chat is blocked while Bedrock cannot answer in time.",
++        "mlCost": "Billed per check by AWS (about $0.40 per 1,000 short prompts)"
+       },
+       "field": {
+         "label": "Name",
+@@ -788,7 +808,9 @@
+         "enabled": "Enabled",
+         "requests": "Requests",
+         "window_seconds": "Window (seconds)",
+-        "tokens": "Tokens"
++        "tokens": "Tokens",
++        "timeout_ms": "Timeout (ms)",
++        "fail_mode": "Failure mode"
+       },
+       "history": {
+         "title": "Change history",
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 1f0f74e..9e67632 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -515,7 +515,10 @@
+       "rule": {
+         "promptGuard": "Protección de prompts de la ruta de IA",
+         "unknown": "Bloqueo anterior (regla no registrada)",
+-        "removed": "{{id}} (regla eliminada)"
++        "removed": "{{id}} (regla eliminada)",
++        "bedrock": "Bedrock · {{what}}",
++        "uninspectable": "No se pudo inspeccionar la solicitud",
++        "mlUnavailable": "Segunda capa no disponible"
+       },
+       "loadError": "No se pudieron cargar los datos",
+       "pathHint": {
+@@ -603,7 +606,13 @@
+       "idle": {
+         "title": "Aún no se ha comprobado nada",
+         "body": "Introduce un prompt y elige una ruta, luego compruébalo contra las reglas activas. El prompt nunca se envía al modelo."
+-      }
++      },
++      "layer1": "Capa 1 · {{count}} reglas de bloqueo revisadas",
++      "layer2Off": "Capa 2 · Bedrock Guardrails está desactivado",
++      "layer2Allowed": "Capa 2 · Bedrock Guardrails no encontró nada ({{ms}} ms)",
++      "layer2Blocked": "Capa 2 · Bedrock Guardrails bloquearía ({{ms}} ms)",
++      "layer2DownOpen": "Capa 2 · Bedrock Guardrails no disponible; el gateway permitiría (fail open)",
++      "layer2DownClosed": "Capa 2 · Bedrock Guardrails no disponible; el gateway bloquearía (fail closed)"
+     },
+     "overview": {
+       "title": "Resumen",
+@@ -777,7 +786,18 @@
+         "ai_token_budget": {
+           "name": "Presupuesto de tokens de IA",
+           "help": "Limitar el número de tokens que un usuario puede gastar en la ruta de IA en una ventana de tiempo."
+-        }
++        },
++        "kiro_ml_guard": {
++          "name": "Bedrock Guardrails (segunda capa)",
++          "help": "Tras las reglas de bloqueo, Amazon Bedrock revisa el prompt en busca de datos personales (nombres, direcciones, teléfonos, datos bancarios, contraseñas), ataques de prompt y exfiltración de datos. Añade unos 0,5 s por chat de Kiro."
++        },
++        "timeoutMs": "Tiempo límite (ms)",
++        "failMode": "Si Bedrock va lento o no está disponible",
++        "failOpen": "Permitir (fail open)",
++        "failClosed": "Bloquear (fail closed)",
++        "failOpenHelp": "Los prompts siguen pasando por las reglas de bloqueo; solo se omite la revisión de Bedrock.",
++        "failClosedHelp": "Todos los chats de Kiro se bloquean mientras Bedrock no responda a tiempo.",
++        "mlCost": "AWS cobra por revisión (unos 0,40 $ por cada 1.000 prompts cortos)"
+       },
+       "field": {
+         "label": "Nombre",
+@@ -788,7 +808,9 @@
+         "enabled": "Activada",
+         "requests": "Solicitudes",
+         "window_seconds": "Ventana (segundos)",
+-        "tokens": "Tokens"
++        "tokens": "Tokens",
++        "timeout_ms": "Tiempo límite (ms)",
++        "fail_mode": "Modo de fallo"
+       },
+       "history": {
+         "title": "Historial de cambios",
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index 7fd1dbf..07df4c9 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -515,7 +515,10 @@
+       "rule": {
+         "promptGuard": "Yapay zekâ rotası istem koruması",
+         "unknown": "Önceki engelleme (kural kaydedilmedi)",
+-        "removed": "{{id}} (kural kaldırıldı)"
++        "removed": "{{id}} (kural kaldırıldı)",
++        "bedrock": "Bedrock · {{what}}",
++        "uninspectable": "İstek denetlenemedi",
++        "mlUnavailable": "İkinci katman kullanılamıyor"
+       },
+       "loadError": "Veriler yüklenemedi",
+       "pathHint": {
+@@ -603,7 +606,13 @@
+       "idle": {
+         "title": "Henüz bir şey denetlenmedi",
+         "body": "Bir istem girin ve bir rota seçin, ardından canlı kurallara karşı denetleyin. İstem asla modele gönderilmez."
+-      }
++      },
++      "layer1": "Katman 1 · {{count}} engelleme kuralı denetlendi",
++      "layer2Off": "Katman 2 · Bedrock Guardrails kapalı",
++      "layer2Allowed": "Katman 2 · Bedrock Guardrails bir şey bulmadı ({{ms}} ms)",
++      "layer2Blocked": "Katman 2 · Bedrock Guardrails engellerdi ({{ms}} ms)",
++      "layer2DownOpen": "Katman 2 · Bedrock Guardrails kullanılamıyor; ağ geçidi izin verirdi (fail open)",
++      "layer2DownClosed": "Katman 2 · Bedrock Guardrails kullanılamıyor; ağ geçidi engellerdi (fail closed)"
+     },
+     "overview": {
+       "title": "Genel Bakış",
+@@ -777,7 +786,18 @@
+         "ai_token_budget": {
+           "name": "Yapay zekâ jeton bütçesi",
+           "help": "Bir kullanıcının yapay zekâ rotasında bir zaman penceresinde harcayabileceği jeton sayısını sınırla."
+-        }
++        },
++        "kiro_ml_guard": {
++          "name": "Bedrock Guardrails (ikinci katman)",
++          "help": "Engelleme kuralları geçildikten sonra Amazon Bedrock istemi kişisel veriler (adlar, adresler, telefonlar, banka bilgileri, parolalar), istem saldırıları ve veri sızdırma açısından denetler. Her Kiro sohbetine yaklaşık 0,5 sn ekler."
++        },
++        "timeoutMs": "Zaman aşımı (ms)",
++        "failMode": "Bedrock yavaşsa veya erişilemiyorsa",
++        "failOpen": "İzin ver (fail open)",
++        "failClosed": "Engelle (fail closed)",
++        "failOpenHelp": "İstemler engelleme kurallarıyla denetlenmeye devam eder; yalnızca Bedrock denetimi atlanır.",
++        "failClosedHelp": "Bedrock zamanında yanıt veremediği sürece tüm Kiro sohbetleri engellenir.",
++        "mlCost": "AWS denetim başına ücretlendirir (1.000 kısa istem için yaklaşık 0,40 $)"
+       },
+       "field": {
+         "label": "Ad",
+@@ -788,7 +808,9 @@
+         "enabled": "Etkin",
+         "requests": "İstek sayısı",
+         "window_seconds": "Pencere (saniye)",
+-        "tokens": "Jeton"
++        "tokens": "Jeton",
++        "timeout_ms": "Zaman aşımı (ms)",
++        "fail_mode": "Hata modu"
+       },
+       "history": {
+         "title": "Değişiklik geçmişi",
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index cc44267..d5b7c43 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -515,7 +515,10 @@
+       "rule": {
+         "promptGuard": "AI 路由提示词防护",
+         "unknown": "早期拦截（未记录规则）",
+-        "removed": "{{id}}（规则已删除）"
++        "removed": "{{id}}（规则已删除）",
++        "bedrock": "Bedrock · {{what}}",
++        "uninspectable": "请求无法检查",
++        "mlUnavailable": "第二层不可用"
+       },
+       "loadError": "无法加载数据",
+       "pathHint": {
+@@ -603,7 +606,13 @@
+       "idle": {
+         "title": "尚未检查任何内容",
+         "body": "输入提示并选择路由，然后用实时规则进行检查。提示绝不会发送到模型。"
+-      }
++      },
++      "layer1": "第 1 层 · 已检查 {{count}} 条拦截规则",
++      "layer2Off": "第 2 层 · Bedrock Guardrails 已关闭",
++      "layer2Allowed": "第 2 层 · Bedrock Guardrails 未发现问题（{{ms}} 毫秒）",
++      "layer2Blocked": "第 2 层 · Bedrock Guardrails 将会拦截（{{ms}} 毫秒）",
++      "layer2DownOpen": "第 2 层 · Bedrock Guardrails 不可用；网关将放行（fail open）",
++      "layer2DownClosed": "第 2 层 · Bedrock Guardrails 不可用；网关将拦截（fail closed）"
+     },
+     "overview": {
+       "title": "概览",
+@@ -777,7 +786,18 @@
+         "ai_token_budget": {
+           "name": "AI 令牌预算",
+           "help": "限制用户在一个时间窗口内可在 AI 路由上消耗的令牌数量。"
+-        }
++        },
++        "kiro_ml_guard": {
++          "name": "Bedrock Guardrails（第二层）",
++          "help": "拦截规则通过后，Amazon Bedrock 会检查提示词中的个人数据（姓名、地址、电话、银行信息、密码）、提示词攻击和数据外泄。每次 Kiro 对话约增加 0.5 秒。"
++        },
++        "timeoutMs": "超时（毫秒）",
++        "failMode": "当 Bedrock 缓慢或不可用时",
++        "failOpen": "放行（fail open）",
++        "failClosed": "拦截（fail closed）",
++        "failOpenHelp": "提示词仍会经过拦截规则检查，只跳过 Bedrock 检查。",
++        "failClosedHelp": "在 Bedrock 无法及时响应期间，所有 Kiro 对话都会被拦截。",
++        "mlCost": "AWS 按检查次数计费（每 1,000 条短提示词约 0.40 美元）"
+       },
+       "field": {
+         "label": "名称",
+@@ -788,7 +808,9 @@
+         "enabled": "已启用",
+         "requests": "请求数",
+         "window_seconds": "时间窗口（秒）",
+-        "tokens": "令牌"
++        "tokens": "令牌",
++        "timeout_ms": "超时（毫秒）",
++        "fail_mode": "故障模式"
+       },
+       "history": {
+         "title": "更改历史",

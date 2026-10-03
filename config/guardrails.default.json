@@ -1,0 +1,126 @@
+{
+  "_doc": "Default guardrail rules, copied to $KGW_DATA_DIR/guardrails.json on first start (scripts/init.sh). The live copy is edited by the console and has its own git history in the data dir. Patterns are PCRE (ngx.re / ai-prompt-guard). applies_to: kiro = intercepted Kiro inference, ai = /v1/chat/completions. kiro_ml_guard needs BEDROCK_GUARDRAIL_ID in .env before it is switched on.",
+  "version": 1,
+  "block_message": "Blocked by organization AI gateway policy. Remove the sensitive content and try again.",
+  "rules": [
+    {
+      "id": "demo-keyword",
+      "label": "Demo block keyword",
+      "description": "Lets you show a block on demand during demos.",
+      "pattern": "KIRO-GATEWAY-BLOCK-DEMO",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "aws-access-key-id",
+      "label": "AWS access key ID",
+      "description": "Stops long-term AWS access keys from being sent to the model.",
+      "pattern": "AKIA[0-9A-Z]{16}",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "pii-email",
+      "label": "Email address",
+      "description": "Personal or work email addresses.",
+      "pattern": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "pii-thai-national-id",
+      "label": "Thai national ID",
+      "description": "13-digit citizen ID, e.g. 1-2345-67890-12-3.",
+      "pattern": "\\b\\d[ -]?\\d{4}[ -]?\\d{5}[ -]?\\d{2}[ -]?\\d\\b",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "pii-credit-card",
+      "label": "Credit card number",
+      "description": "13-16 digit card numbers, with or without spaces/dashes.",
+      "pattern": "\\b(?:\\d[ -]?){12,15}\\d\\b",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "pii-thai-mobile",
+      "label": "Thai mobile number",
+      "description": "08x/09x/06x numbers or +66 format.",
+      "pattern": "(?:\\+66[ -]?|\\b0)[689]\\d[ -]?\\d{3}[ -]?\\d{4}\\b",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "pii-us-ssn",
+      "label": "US Social Security number",
+      "description": "Format 123-45-6789.",
+      "pattern": "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "secret-private-key",
+      "label": "Private key",
+      "description": "PEM private key blocks (RSA, EC, OpenSSH).",
+      "pattern": "-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----",
+      "case_insensitive": false,
+      "applies_to": [
+        "kiro",
+        "ai"
+      ],
+      "enabled": true
+    }
+  ],
+  "guardrails": {
+    "kiro_prompt_guard": {
+      "enabled": true
+    },
+    "kiro_rate_limit": {
+      "enabled": true,
+      "requests": 30,
+      "window_seconds": 60
+    },
+    "ai_prompt_guard": {
+      "enabled": true
+    },
+    "ai_token_budget": {
+      "enabled": true,
+      "tokens": 20000,
+      "window_seconds": 3600
+    },
+    "kiro_ml_guard": {
+      "enabled": false,
+      "timeout_ms": 1500,
+      "fail_mode": "open"
+    }
+  }
+}

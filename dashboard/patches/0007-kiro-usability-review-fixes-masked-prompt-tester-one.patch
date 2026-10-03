@@ -1,0 +1,390 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kiro Gateway <kiro-gateway@localhost>
+Date: Fri, 2 Oct 2026 17:37:43 +0000
+Subject: [PATCH] kiro: usability review fixes + masked prompt tester (one
+ sign-in, 24h defaults, clearer copy)
+
+---
+ src/kiro/guardrails/api.ts                     |  5 ++++-
+ src/kiro/guardrails/format.ts                  |  3 ++-
+ src/kiro/guardrails/overview/OverviewPage.tsx  |  5 +++--
+ src/kiro/guardrails/rules/RuleDrawer.tsx       |  4 +++-
+ src/kiro/guardrails/tester/TesterPage.tsx      | 16 +++++++++++-----
+ src/kiro/guardrails/ui.tsx                     | 10 ++++++----
+ src/kiro/observability/latency/LatencyPage.tsx |  2 +-
+ src/kiro/observability/traces/TracesPage.tsx   |  2 +-
+ src/kiro/observability/traffic/TrafficPage.tsx |  2 +-
+ src/kiro/shell/PortalHeader.tsx                |  2 --
+ src/locales/de/common.json                     | 13 +++++++++----
+ src/locales/en/common.json                     | 13 +++++++++----
+ src/locales/es/common.json                     | 13 +++++++++----
+ src/locales/tr/common.json                     | 13 +++++++++----
+ src/locales/zh/common.json                     | 13 +++++++++----
+ 15 files changed, 77 insertions(+), 39 deletions(-)
+
+diff --git a/src/kiro/guardrails/api.ts b/src/kiro/guardrails/api.ts
+index 315fe15..d81f1dd 100644
+--- a/src/kiro/guardrails/api.ts
++++ b/src/kiro/guardrails/api.ts
+@@ -97,7 +97,10 @@ export type TestResult = {
+   guard_enabled: boolean;
+   would_block: boolean;
+   rules_checked: number;
+-  matches: { id: string; label: string; matched: boolean; match?: string }[];
++  /** True when the Kiro guard's normalisation (full-width / Thai digits, zero-width chars) changed the text. */
++  normalised: boolean;
++  /** The server never returns the raw match: a masked preview plus UTF-16 offsets into the sent text. */
++  matches: { id: string; label: string; matched: boolean; preview?: string; start?: number; length?: number }[];
+ };
+ 
+ export type PatternCheck = { valid: boolean; error: string | null };
+diff --git a/src/kiro/guardrails/format.ts b/src/kiro/guardrails/format.ts
+index 9b563cd..1de4474 100644
+--- a/src/kiro/guardrails/format.ts
++++ b/src/kiro/guardrails/format.ts
+@@ -31,7 +31,8 @@ export const useRuleLabel = () => {
+       if (m.has(id)) return m.get(id)!;
+       if (id === 'prompt-guard') return t('kiro.guard.rule.promptGuard');
+       if (id === 'unknown') return t('kiro.guard.rule.unknown');
+-      return id;
++      // Only call it removed once the current rules are known (not while they load).
++      return data ? t('kiro.guard.rule.removed', { id }) : id;
+     };
+   }, [data, t]);
+ };
+diff --git a/src/kiro/guardrails/overview/OverviewPage.tsx b/src/kiro/guardrails/overview/OverviewPage.tsx
+index b7dd6ac..ca84350 100644
+--- a/src/kiro/guardrails/overview/OverviewPage.tsx
++++ b/src/kiro/guardrails/overview/OverviewPage.tsx
+@@ -33,7 +33,7 @@ import { useTranslation } from 'react-i18next';
+ 
+ import { PortalPageHeader } from '@/kiro/shell/Page';
+ 
+-import { useHistory, useStats } from '../api';
++import { useGuardrails, useHistory, useStats } from '../api';
+ import { fmtMs, fmtNumber, useRuleLabel, useTimeAgo } from '../format';
+ import { EmptyState, ErrorState, SectionCard } from '../ui';
+ import { axisLabel, buildSeries, type RangeHours, sparkFrom } from './data';
+@@ -52,6 +52,7 @@ export const OverviewPage = () => {
+   const history = useHistory();
+ 
+   const s = stats.data;
++  const rulesTotal = useGuardrails().data?.config.rules.length ?? 0;
+   const daily = hours === 168;
+   const series = useMemo(() => (s ? buildSeries(s.timeline, hours) : []), [s, hours]);
+ 
+@@ -128,7 +129,7 @@ export const OverviewPage = () => {
+             <KpiCard
+               label={t('kiro.overview.kpi.protections')}
+               value={s ? `${num(s.protections_on)}/${num(s.protections_total)}` : '–'}
+-              note={s ? t('kiro.overview.kpi.rulesEnabled', { count: s.rules_enabled }) : undefined}
++              note={s ? t('kiro.overview.kpi.rulesEnabled', { count: s.rules_enabled, total: rulesTotal }) : undefined}
+               color="violet.5"
+               loading={stats.isPending}
+             />
+diff --git a/src/kiro/guardrails/rules/RuleDrawer.tsx b/src/kiro/guardrails/rules/RuleDrawer.tsx
+index 5a72bb0..05ef5ce 100644
+--- a/src/kiro/guardrails/rules/RuleDrawer.tsx
++++ b/src/kiro/guardrails/rules/RuleDrawer.tsx
+@@ -296,7 +296,9 @@ export const RuleDrawer = ({ opened, rule, existing, onClose, onSubmit }: RuleDr
+           <Button variant="default" onClick={onClose}>
+             {t('kiro.rules.drawer.cancel')}
+           </Button>
+-          <Button onClick={submit}>{t('kiro.rules.drawer.save')}</Button>
++          <Button onClick={submit} disabled={invalid}>
++            {t('kiro.rules.drawer.save')}
++          </Button>
+         </Group>
+       </Stack>
+     </Drawer>
+diff --git a/src/kiro/guardrails/tester/TesterPage.tsx b/src/kiro/guardrails/tester/TesterPage.tsx
+index 991004c..cb08cd4 100644
+--- a/src/kiro/guardrails/tester/TesterPage.tsx
++++ b/src/kiro/guardrails/tester/TesterPage.tsx
+@@ -92,9 +92,15 @@ export const TesterPage = () => {
+   };
+ 
+   const result = mutation.data;
++  // Highlight using the text that was actually checked (the textarea may have changed since),
++  // sliced at the server's offsets, so the secret never has to travel back from the server.
++  const checkedText = mutation.variables?.value ?? '';
+   const matchStrings = useMemo(
+-    () => (result?.matches ?? []).map((m) => m.match).filter((m): m is string => !!m),
+-    [result],
++    () =>
++      (result?.matches ?? [])
++        .map((m) => (m.start == null || m.length == null ? '' : checkedText.slice(m.start, m.start + m.length)))
++        .filter((m) => !!m),
++    [result, checkedText],
+   );
+ 
+   return (
+@@ -173,7 +179,7 @@ export const TesterPage = () => {
+             {mutation.isError ? (
+               <ErrorState error={mutation.error} />
+             ) : result ? (
+-              <ResultView result={result} input={text} matchStrings={matchStrings} />
++              <ResultView result={result} input={checkedText} matchStrings={matchStrings} />
+             ) : (
+               <Center h="100%" mih={240}>
+                 <Stack align="center" gap={8} maw={380}>
+@@ -237,10 +243,10 @@ const ResultView = ({
+               <Badge color="red" variant="light" radius="sm">
+                 {m.label}
+               </Badge>
+-              {m.match && (
++              {m.preview && (
+                 <Mark color="red">
+                   <Text span size="sm" ff="monospace">
+-                    {m.match}
++                    {m.preview}
+                   </Text>
+                 </Mark>
+               )}
+diff --git a/src/kiro/guardrails/ui.tsx b/src/kiro/guardrails/ui.tsx
+index c5d5e64..01e7237 100644
+--- a/src/kiro/guardrails/ui.tsx
++++ b/src/kiro/guardrails/ui.tsx
+@@ -15,7 +15,7 @@
+  * limitations under the License.
+  */
+ /** Small building blocks shared by the AI Guardrails pages. */
+-import { Badge, Card, Center, Group, Loader, Stack, Text, ThemeIcon } from '@mantine/core';
++import { Badge, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Tooltip } from '@mantine/core';
+ import type { FC, ReactNode } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
+@@ -43,9 +43,11 @@ export const ResultBadge: FC<{ result: EventResult }> = ({ result }) => {
+ export const PathBadge: FC<{ path: GuardPath }> = ({ path }) => {
+   const { t } = useTranslation();
+   return (
+-    <Badge color={path === 'kiro' ? 'violet' : 'blue'} variant="outline" radius="sm">
+-      {t(`kiro.guard.path.${path}`)}
+-    </Badge>
++    <Tooltip label={t(path === 'kiro' ? 'kiro.guard.pathHint.kiro' : 'kiro.guard.pathHint.ai')} multiline maw={280}>
++      <Badge color={path === 'kiro' ? 'violet' : 'blue'} variant="outline" radius="sm" tabIndex={0}>
++        {t(`kiro.guard.path.${path}`)}
++      </Badge>
++    </Tooltip>
+   );
+ };
+ 
+diff --git a/src/kiro/observability/latency/LatencyPage.tsx b/src/kiro/observability/latency/LatencyPage.tsx
+index 61416fd..450ca9b 100644
+--- a/src/kiro/observability/latency/LatencyPage.tsx
++++ b/src/kiro/observability/latency/LatencyPage.tsx
+@@ -50,7 +50,7 @@ const latencyColor = (ms: number | null | undefined): string =>
+ 
+ export const LatencyPage = () => {
+   const { t, i18n } = useTranslation();
+-  const [hours, setHours] = useState<RangeHours>(1);
++  const [hours, setHours] = useState<RangeHours>(24);
+   const [pct, setPct] = useState<'p50' | 'p95'>('p95');
+   const latency = useLatency(hours);
+   const d = latency.data;
+diff --git a/src/kiro/observability/traces/TracesPage.tsx b/src/kiro/observability/traces/TracesPage.tsx
+index ad3083b..47e5714 100644
+--- a/src/kiro/observability/traces/TracesPage.tsx
++++ b/src/kiro/observability/traces/TracesPage.tsx
+@@ -44,7 +44,7 @@ const useRelative = () => {
+ 
+ export const TracesPage = () => {
+   const { t, i18n } = useTranslation();
+-  const [hours, setHours] = useState<TraceHours>(1);
++  const [hours, setHours] = useState<TraceHours>(24);
+   const [kind, setKind] = useState<TraceKind>('chat');
+   const [selected, setSelected] = useState<string | null>(null);
+   const relative = useRelative();
+diff --git a/src/kiro/observability/traffic/TrafficPage.tsx b/src/kiro/observability/traffic/TrafficPage.tsx
+index f5efc78..f3d70fa 100644
+--- a/src/kiro/observability/traffic/TrafficPage.tsx
++++ b/src/kiro/observability/traffic/TrafficPage.tsx
+@@ -41,7 +41,7 @@ const CHART_H = 260;
+ 
+ export const TrafficPage = () => {
+   const { t, i18n } = useTranslation();
+-  const [hours, setHours] = useState<RangeHours>(1);
++  const [hours, setHours] = useState<RangeHours>(24);
+   const traffic = useTraffic(hours);
+   const d = traffic.data;
+   const lang = i18n.language;
+diff --git a/src/kiro/shell/PortalHeader.tsx b/src/kiro/shell/PortalHeader.tsx
+index 0566ec7..92688e2 100644
+--- a/src/kiro/shell/PortalHeader.tsx
++++ b/src/kiro/shell/PortalHeader.tsx
+@@ -39,7 +39,6 @@ import { type FC, useMemo, useState } from 'react';
+ import { useTranslation } from 'react-i18next';
+ 
+ import { LanguageMenu } from '@/components/Header/LanguageMenu';
+-import { SettingModalBtn } from '@/components/Header/SettingModalBtn';
+ import type { NavRoute } from '@/config/navRoutes';
+ import { getMe, getStatus, signOut } from '@/kiro/api';
+ import { groupLabel, itemLabel, navGroups, type PortalNavItem } from '@/kiro/nav';
+@@ -234,7 +233,6 @@ export const PortalHeader: FC<Props> = ({ opened, toggle }) => {
+             <HealthPill />
+           </Group>
+           <ThemeToggle />
+-          <SettingModalBtn />
+           <Group visibleFrom="sm">
+             <LanguageMenu />
+           </Group>
+diff --git a/src/locales/de/common.json b/src/locales/de/common.json
+index 87aaedb..4428838 100644
+--- a/src/locales/de/common.json
++++ b/src/locales/de/common.json
+@@ -514,9 +514,14 @@
+       },
+       "rule": {
+         "promptGuard": "Prompt-Schutz der KI-Route",
+-        "unknown": "Frühere Blockierung (Regel nicht erfasst)"
++        "unknown": "Frühere Blockierung (Regel nicht erfasst)",
++        "removed": "{{id}} (Regel inzwischen entfernt)"
+       },
+-      "loadError": "Daten konnten nicht geladen werden"
++      "loadError": "Daten konnten nicht geladen werden",
++      "pathHint": {
++        "kiro": "Kiro: Prompts aus Kiro (IDE und CLI), vom Gateway abgefangen.",
++        "ai": "KI-Route: Anwendungen, die die OpenAI-kompatible API /v1/chat/completions des Gateways aufrufen."
++      }
+     },
+     "activity": {
+       "title": "Aktivität",
+@@ -622,8 +627,8 @@
+         "users": "Aktive Nutzer",
+         "latency": "Kiro-Latenz p50 / p95",
+         "latencyNote": "nur abgeschlossene Chats",
+-        "protections": "Schutzregeln aktiv",
+-        "rulesEnabled": "{{count}} Regeln aktiviert"
++        "protections": "Schutzschalter an",
++        "rulesEnabled": "{{count}} von {{total}} Sperrregeln aktiv"
+       },
+       "chart": {
+         "title": "Erlaubt vs. blockiert",
+diff --git a/src/locales/en/common.json b/src/locales/en/common.json
+index f46d4ef..884c618 100644
+--- a/src/locales/en/common.json
++++ b/src/locales/en/common.json
+@@ -514,9 +514,14 @@
+       },
+       "rule": {
+         "promptGuard": "AI route prompt guard",
+-        "unknown": "Earlier block (rule not recorded)"
++        "unknown": "Earlier block (rule not recorded)",
++        "removed": "{{id}} (rule since removed)"
+       },
+-      "loadError": "Could not load data"
++      "loadError": "Could not load data",
++      "pathHint": {
++        "kiro": "Kiro: prompts from Kiro (IDE and CLI) intercepted by the gateway.",
++        "ai": "AI route: apps calling the gateway's OpenAI-compatible /v1/chat/completions API."
++      }
+     },
+     "activity": {
+       "title": "Activity",
+@@ -622,8 +627,8 @@
+         "users": "Active users",
+         "latency": "Kiro latency p50 / p95",
+         "latencyNote": "completed chats only",
+-        "protections": "Protections on",
+-        "rulesEnabled": "{{count}} rules enabled"
++        "protections": "Protection switches on",
++        "rulesEnabled": "{{count}} of {{total}} block rules on"
+       },
+       "chart": {
+         "title": "Allowed vs blocked",
+diff --git a/src/locales/es/common.json b/src/locales/es/common.json
+index 0cf2e92..1f0f74e 100644
+--- a/src/locales/es/common.json
++++ b/src/locales/es/common.json
+@@ -514,9 +514,14 @@
+       },
+       "rule": {
+         "promptGuard": "Protección de prompts de la ruta de IA",
+-        "unknown": "Bloqueo anterior (regla no registrada)"
++        "unknown": "Bloqueo anterior (regla no registrada)",
++        "removed": "{{id}} (regla eliminada)"
+       },
+-      "loadError": "No se pudieron cargar los datos"
++      "loadError": "No se pudieron cargar los datos",
++      "pathHint": {
++        "kiro": "Kiro: prompts de Kiro (IDE y CLI) interceptados por el gateway.",
++        "ai": "Ruta de IA: aplicaciones que llaman a la API /v1/chat/completions compatible con OpenAI del gateway."
++      }
+     },
+     "activity": {
+       "title": "Actividad",
+@@ -622,8 +627,8 @@
+         "users": "Usuarios activos",
+         "latency": "Latencia de Kiro p50 / p95",
+         "latencyNote": "solo chats completados",
+-        "protections": "Protecciones activas",
+-        "rulesEnabled": "{{count}} reglas habilitadas"
++        "protections": "Interruptores de protección activos",
++        "rulesEnabled": "{{count}} de {{total}} reglas de bloqueo activas"
+       },
+       "chart": {
+         "title": "Permitidos vs. bloqueados",
+diff --git a/src/locales/tr/common.json b/src/locales/tr/common.json
+index e421914..7fd1dbf 100644
+--- a/src/locales/tr/common.json
++++ b/src/locales/tr/common.json
+@@ -514,9 +514,14 @@
+       },
+       "rule": {
+         "promptGuard": "Yapay zekâ rotası istem koruması",
+-        "unknown": "Önceki engelleme (kural kaydedilmedi)"
++        "unknown": "Önceki engelleme (kural kaydedilmedi)",
++        "removed": "{{id}} (kural kaldırıldı)"
+       },
+-      "loadError": "Veriler yüklenemedi"
++      "loadError": "Veriler yüklenemedi",
++      "pathHint": {
++        "kiro": "Kiro: Kiro'dan (IDE ve CLI) gelen ve ağ geçidinin yakaladığı istemler.",
++        "ai": "Yapay zekâ rotası: ağ geçidinin OpenAI uyumlu /v1/chat/completions API'sini çağıran uygulamalar."
++      }
+     },
+     "activity": {
+       "title": "Etkinlik",
+@@ -622,8 +627,8 @@
+         "users": "Etkin kullanıcılar",
+         "latency": "Kiro gecikmesi p50 / p95",
+         "latencyNote": "yalnızca tamamlanan sohbetler",
+-        "protections": "Etkin korumalar",
+-        "rulesEnabled": "{{count}} kural etkin"
++        "protections": "Açık koruma anahtarları",
++        "rulesEnabled": "{{total}} engelleme kuralından {{count}} tanesi açık"
+       },
+       "chart": {
+         "title": "İzin verilen vs engellenen",
+diff --git a/src/locales/zh/common.json b/src/locales/zh/common.json
+index 6851884..cc44267 100644
+--- a/src/locales/zh/common.json
++++ b/src/locales/zh/common.json
+@@ -514,9 +514,14 @@
+       },
+       "rule": {
+         "promptGuard": "AI 路由提示词防护",
+-        "unknown": "早期拦截（未记录规则）"
++        "unknown": "早期拦截（未记录规则）",
++        "removed": "{{id}}（规则已删除）"
+       },
+-      "loadError": "无法加载数据"
++      "loadError": "无法加载数据",
++      "pathHint": {
++        "kiro": "Kiro：网关拦截的来自 Kiro（IDE 和 CLI）的提示词。",
++        "ai": "AI 路由：调用网关 OpenAI 兼容 /v1/chat/completions 接口的应用。"
++      }
+     },
+     "activity": {
+       "title": "活动",
+@@ -622,8 +627,8 @@
+         "users": "活跃用户",
+         "latency": "Kiro 延迟 p50 / p95",
+         "latencyNote": "仅限已完成的聊天",
+-        "protections": "已启用防护",
+-        "rulesEnabled": "已启用 {{count}} 条规则"
++        "protections": "已开启的防护开关",
++        "rulesEnabled": "{{total}} 条拦截规则中已启用 {{count}} 条"
+       },
+       "chart": {
+         "title": "放行与拦截",
