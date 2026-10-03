@@ -1,0 +1,9 @@
+{
+  "app": "npx tsx bin/app.ts",
+  "versionReporting": false,
+  "context": {
+    "source": "git",
+    "repoUrl": "",
+    "repoRef": "main"
+  }
+}
