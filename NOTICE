@@ -1,0 +1,16 @@
+Kiro Gateway
+Copyright the Kiro Gateway contributors.
+
+This product includes software developed at The Apache Software Foundation (https://www.apache.org/):
+
+  Apache APISIX Dashboard (https://github.com/apache/apisix-dashboard), Apache License 2.0.
+  dashboard/upstream.env pins the upstream commit; dashboard/patches/ contains the modifications
+  made for this project. The built portal includes the upstream dashboard's third-party
+  dependencies under their own licenses (see the upstream repository and pnpm-lock.yaml).
+
+Container images used at runtime (Apache APISIX, etcd, Squid, Prometheus, OpenTelemetry Collector,
+Grafana Loki, Grafana Tempo, Grafana) are distributed by their projects under their own licenses and
+are not part of this repository.
+
+The Kiro logo (console/web/static/kiro.svg, from https://thesvg.org/icons/kiro) is a trademark of
+Amazon.com, Inc. or its affiliates and is not covered by the Apache License of this repository.

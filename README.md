@@ -1,226 +1,280 @@
-# Kiro Gateway — guardrails, audit and monitoring for Kiro (Squid + Apache APISIX)
+<p align="center"><img src="console/web/static/kiro.svg" alt="" width="64" height="64"></p>
 
-Central control and content inspection for Kiro traffic, plus an OpenAI-compatible AI Gateway.
-**Test/demo only**: uses a self-signed test CA and binds everything to `127.0.0.1`.
+# Kiro Gateway
+
+Guardrails, audit and monitoring for [Kiro](https://kiro.dev) traffic. Kiro Gateway sits between Kiro
+(IDE and CLI) and its service endpoints as an HTTPS proxy, inspects every prompt before it leaves your
+network, blocks secrets and personal data, and records who sent what, all managed from one web portal.
+It also exposes an OpenAI-compatible AI Gateway route with the same rules.
+
+Runs anywhere Docker Compose runs, or on AWS with one CloudFormation stack.
+
+- **Two guardrail layers**: your regex rules first (instant, offline), then
+  [Amazon Bedrock Guardrails](https://aws.amazon.com/bedrock/guardrails/) for personal data and
+  denied topics (optional, fail-open by default). Blocked prompts never reach Kiro's backend.
+- **Selective interception**: only the Kiro hosts are decrypted; all other HTTPS traffic through the
+  proxy is tunnelled untouched.
+- **Audit without leaking**: every Kiro request is logged with a per-user key, and every rule match is
+  masked before it is written (`AK****OP`), so logs, dashboards and the portal never hold the secret.
+- **One portal**: rules editor with history, prompt tester, live activity, traffic, latency, usage and
+  traces, plus the full Apache APISIX dashboard, behind one sign-in.
+- **Monitoring as code**: Prometheus, Loki, Tempo and Grafana, provisioned with four dashboards.
+
+![Portal overview](docs/images/portal-overview.png)
+
+## How it works
 
 ```
-kiro-cli ──HTTPS_PROXY──▶ Squid :3128 ──(Kiro hosts only, via squid/hosts)──▶ APISIX :443 ──TLS──▶ real Kiro/AWS endpoint
-                            └──(everything else: plain CONNECT tunnel, not decrypted)──▶ internet
-apps ──apikey──▶ APISIX :9080 /v1/chat/completions ──ai-proxy──▶ OpenAI (or local mock LLM)
+Kiro IDE / CLI ──HTTPS_PROXY──▶ Squid :3128 ──Kiro hosts only──▶ APISIX ──TLS──▶ Kiro / AWS endpoints
+                                  │                                │
+                                  │                                ├─ regex rules ─▶ ml-guard ─▶ Bedrock ApplyGuardrail
+                                  │                                └─ audit log ─▶ OTel Collector ─▶ Loki / Tempo
+                                  └──all other hosts: CONNECT tunnel, never decrypted──▶ internet
+
+Browser ──HTTPS──▶ Portal (console :9180) ──▶ rules, activity, observability API, APISIX dashboard, Grafana
+Apps ──API key──▶ APISIX /v1/chat/completions ──ai-proxy──▶ OpenAI (or the built-in mock LLM)
 ```
 
 | Component | Role |
 |---|---|
-| Squid | Thin CONNECT tier. Never decrypts. Picks which hosts go to APISIX via its own `hosts_file`. |
-| APISIX | Terminates TLS for listed Kiro hosts, applies policy, re-encrypts to the real endpoint (upstream certs verified). |
-| etcd | APISIX config store. Not exposed to the host. |
+| Squid | Thin CONNECT tier. Never decrypts. Sends only the hosts in `squid/hosts` to APISIX; enforces the client allow list. |
+| Apache APISIX | Terminates TLS for the Kiro hosts with certificates from the gateway CA, runs the guard (`policy/inference-guard.lua`), rate limits and audit logging, re-encrypts to the real endpoint (upstream certificates verified against pinned Amazon roots). |
+| ml-guard | Small service calling Bedrock `ApplyGuardrail` with the user's message only. |
+| Console | FastAPI app serving the portal (a fork of the APISIX dashboard, built from `dashboard/patches`), the rules API and a read-only observability API. Holds the APISIX admin key server-side. |
+| Monitoring | Prometheus, OpenTelemetry Collector, Loki, Tempo, Grafana. No published ports; Grafana is reached through the portal sign-in. |
 
-## Quick start
+Clients need two things: `HTTPS_PROXY` pointing at the gateway, and trust in the gateway CA. Kiro
+checks certificates and rejects an unknown CA, so it cannot be intercepted silently. Nothing else on
+the client machine changes (`scripts/kiro-via-gateway` sets both for one shell).
+
+## Quick start (Docker Compose)
+
+Requirements: Docker with Compose v2, `openssl`, `jq`, `envsubst` (gettext), `python3`, `git`.
 
 ```bash
-cd kiro-gateway
-scripts/init.sh                       # once: .env secrets, test CA + certs, data/ (idempotent)
-docker compose up -d
-scripts/apply.sh                      # push config/ + policy/ to APISIX (idempotent)
-
-source scripts/kiro-via-gateway on    # this shell -> gateway (fails safe if proxy is down)
-kiro-cli chat
-source scripts/kiro-via-gateway off   # back to direct, prior env values restored
-
-scripts/kiro-via-gateway run kiro-cli chat   # one-off, shell untouched
-scripts/kiro-via-gateway status
-scripts/ai-demo.sh                    # AI Gateway smoke test
-scripts/verify.sh                     # full end-to-end check (stack, interception, block, AI route, kiro on/off)
+git clone https://github.com/<owner>/kiro-gateway.git && cd kiro-gateway
+scripts/init.sh            # once: .env secrets, CA + certificates, portal sign-in, data/ (idempotent)
+docker compose up -d       # builds the console (incl. the portal) and ml-guard images on first run
+scripts/apply.sh           # pushes routes, policy and certificates to APISIX
 ```
 
-`.env` (git-ignored, 0600) holds `APISIX_ADMIN_KEY`, `AI_GW_DEMO_KEY`, `AI_GW_MOCK_TOKEN`, and optional
-`OPENAI_API_KEY` (set it and re-run `scripts/apply.sh` to use OpenAI instead of the mock LLM).
+- Portal: [https://127.0.0.1:9180/](https://127.0.0.1:9180/), user `admin`, password in
+  `pki/console-initial-password`. The certificate is issued by the gateway CA (`pki/ca.crt`).
+- Use Kiro through the gateway:
 
-## What is enforced
+  ```bash
+  source scripts/kiro-via-gateway on     # this shell only; refuses if the proxy is down
+  kiro-cli chat
+  source scripts/kiro-via-gateway off    # previous environment restored
+  scripts/kiro-via-gateway run kiro-cli chat --no-interactive "hello"   # one command
+  ```
 
-| Where | Policy |
+- Check everything end to end: `scripts/verify.sh`.
+
+Everything binds to `127.0.0.1` by default. To serve other machines, set `KGW_BIND_ADDR`,
+`KGW_PROXY_BIND_ADDR`, `CONSOLE_ALLOW_CIDRS`, `KGW_PROXY_ALLOW_CIDRS` and `KGW_PUBLIC_NAMES` in
+`.env`, re-run `scripts/init.sh`, then `docker compose up -d` (see [Configuration](#configuration)).
+
+To turn on the Bedrock layer, create a guardrail (definition in
+`docs/evaluation/bedrock-guardrail.json`, or let the AWS stack create one), set
+`BEDROCK_GUARDRAIL_ID` / `BEDROCK_GUARDRAIL_VERSION` in `.env`, give the host AWS credentials allowed
+to call `bedrock:ApplyGuardrail`, run `docker compose up -d ml-guard`, and switch
+**Bedrock Guardrails** on in the portal's Rules page.
+
+## Deploy to AWS
+
+`deploy/` is a CDK app (TypeScript) that also synthesizes to a plain CloudFormation template.
+
+```
+Browser ─HTTPS─▶ CloudFront + AWS WAF ─VPC origin─▶ internal ALB ─HTTPS─▶ ┐
+Kiro clients (in the VPC / peered) ─▶ internal NLB :3128 ───────────────▶ ├ gateway instance (private subnet)
+                                                                          ┘   └─ encrypted data volume, daily snapshots
+```
+
+What the stack creates:
+
+- **Gateway**: one Amazon Linux 2023 instance in a private subnet, in an Auto Scaling group of one (a
+  failed instance is replaced and re-attaches the data volume: same CA, rules and history). IMDSv2,
+  encrypted disks, no SSH key: use Session Manager.
+- **State**: an encrypted gp3 data volume holding `.env`, `pki/`, `data/` and all Docker volumes, with
+  daily snapshots (Data Lifecycle Manager) and a final snapshot on delete.
+- **Portal**: CloudFront (HTTPS on its `*.cloudfront.net` name, so no domain or certificate is needed)
+  with AWS WAF (per-IP rate limits, a strict limit on `/api/login`, AWS IP reputation, known bad inputs
+  and the common rule set) in front of an internal Application Load Balancer, reached through a
+  CloudFront VPC origin. The load balancer accepts connections only from CloudFront's origin-facing
+  addresses and forwards only requests that carry CloudFront's secret origin header. There is no IP allow list: access is
+  WAF + the portal sign-in.
+- **Proxy**: an internal Network Load Balancer on port 3128 for Kiro clients, limited to `ProxyAllowedCidr`.
+- **Bedrock**: a guardrail and version created by the stack (`deploy/lib/guardrail-policy.ts`); the
+  instance role may only apply that guardrail.
+- **Secrets**: the portal sign-in (generated, Secrets Manager), a backup of the gateway CA, the origin
+  secret. The public CA certificate is published as an SSM parameter for clients.
+- **Operations**: container logs in CloudWatch Logs, alarms on unhealthy targets, Auto Scaling
+  notifications to an SNS topic (optional e-mail). cdk-nag (AWS Solutions) clean; every exception
+  carries its reason in `deploy/lib/gateway-stack.ts`.
+
+### Option A: CloudFormation template (Launch Stack)
+
+Each release attaches `kiro-gateway.template.json` (new VPC) and `kiro-gateway-existing-vpc.template.json`
+to the GitHub release. CloudFormation reads templates from S3, so upload one to a bucket you own and
+open the console with it, or use the CLI:
+
+```bash
+aws s3 cp kiro-gateway.template.json s3://<bucket>/kiro-gateway.template.json
+# Launch Stack link (us-east-1):
+# https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?stackName=KiroGateway&templateURL=https://<bucket>.s3.amazonaws.com/kiro-gateway.template.json
+
+aws cloudformation deploy --region us-east-1 --stack-name KiroGateway \
+  --template-file kiro-gateway.template.json --capabilities CAPABILITY_IAM \
+  --parameter-overrides ProxyAllowedCidr=10.40.0.0/16
+```
+
+The template has no CDK assets and needs no `cdk bootstrap`. The instance clones `SourceRepoUrl` at
+`SourceRef` (set to the release tag) and builds the images on first boot (about 10 minutes; the stack
+waits for the instance to report success).
+
+### Option B: CDK
+
+```bash
+cd deploy && npm ci
+npx cdk deploy KiroGateway --parameters ProxyAllowedCidr=10.40.0.0/16 \
+  -c repoUrl=https://github.com/<owner>/kiro-gateway.git -c repoRef=v1.0.0
+# Deploy this working copy instead of a git ref (needs `cdk bootstrap` once per account/region):
+npx cdk deploy KiroGateway -c source=asset --parameters ProxyAllowedCidr=10.40.0.0/16
+```
+
+`KiroGatewayExistingVpc` deploys into your VPC instead (two private subnets with NAT in different AZs).
+
+### After the deploy
+
+```bash
+# Portal URL and sign-in
+aws cloudformation describe-stacks --stack-name KiroGateway --query 'Stacks[0].Outputs' --output table
+aws secretsmanager get-secret-value --secret-id <PortalLoginSecret> --query SecretString --output text
+# CA certificate for Kiro clients (install as trusted, or point SSL_CERT_FILE at a bundle that includes it)
+aws ssm get-parameter --name <CaCertificateParameter> --query Parameter.Value --output text > kiro-gateway-ca.crt
+```
+
+Clients then use `HTTPS_PROXY=<ProxyEndpoint>`. Shell access: `aws ssm start-session --target <instance-id>`.
+
+Rough cost in us-east-1 with the defaults: about **US$165 per month** (t3.large ~$61, NAT gateway ~$33,
+two load balancers ~$35, WAF ~$10, public IPv4 ~$7, storage and snapshots ~$10, the rest a few dollars;
+Bedrock is per use, about US$0.25 per 1,000 short prompts). Use the
+[AWS Pricing Calculator](https://calculator.aws/) for your own numbers. Delete with
+`npx cdk destroy KiroGateway` or by deleting the stack; the final snapshot and the log group are kept.
+
+## Portal
+
+| Page | What it does |
 |---|---|
-| All intercepted hosts (`global_rules/kiro-audit`) | Audit log (allowlisted fields — no request headers, so tokens never logged). Per-user key = SHA-256 of bearer token (12 hex). |
-| `runtime.*.kiro.dev` — inference (`kiro-inference`) | Blocks the current prompt on `KIRO-GATEWAY-BLOCK-DEMO` or an AWS access key ID (`AKIA…`) → 403 shown in Kiro. 30 req/min per user. No response buffering. |
-| `q.*`, `management.*` (`kiro-observe`) | Log only. |
-| `telemetry.*`, `client-telemetry.*`, `cognito-identity.*` | Not intercepted (tunneled). |
-| `/v1/chat/completions` (`ai-chat`) | `key-auth` per user, `ai-prompt-guard` (same deny rules), 20k tokens/h per user, provider key held by the gateway. |
+| Overview | Allowed vs blocked, blocks by rule, active users, Kiro latency, protection switches. |
+| Rules | Block rules (PCRE, per path: Kiro and/or the AI route), protection switches and limits, the Bedrock layer (on/off, timeout, fail mode), the block message. **Save & apply** validates, applies to the live gateway and commits to the rule history. |
+| Activity | Live audit log with search and filters; prompts are shown masked. |
+| Prompt tester | Runs text through both layers without sending it anywhere else. |
+| Traffic, Latency, Usage, Traces | Fixed server-side Prometheus / Loki / Tempo queries; each card links to Grafana. |
+| Gateway | The stock APISIX dashboard pages (routes, upstreams, consumers, SSL, plugins), using the server-side admin key. |
 
-Intercepted Kiro hosts (found by observing kiro-cli 2.27.0): `runtime.us-east-1.kiro.dev` (inference,
-`GenerateAssistantResponse`), `q.us-east-1.amazonaws.com`, `management.us-east-1.kiro.dev`.
+Security model: [docs/security.md](docs/security.md).
 
-## Operations
+## Configuration
 
-```bash
-# Intercept another host (cert + upstream + route + Squid override), then apply
-scripts/intercept-host.sh <hostname> && scripts/apply.sh && docker compose restart squid
+`.env` (created by `scripts/init.sh` from `.env.example`, mode 0600, git-ignored):
 
-# Change policy: edit policy/*.lua or scripts/build-policy.sh, then
-scripts/apply.sh
-
-# Logs
-docker compose exec apisix tail -f /usr/local/apisix/logs/kiro-audit.log | jq .
-docker compose exec squid  tail -f /var/log/squid/access.log
-LOG_FULL_BODY=1 scripts/apply.sh      # debug: also log raw request bodies (contains code/history!)
-
-# Read-only Admin API without exposing the key
-scripts/admin.sh GET routes
-```
-
-`config/` is the source of truth (git). `pki/` (CA key, leaf keys, generated SSL objects) and `.env` are
-git-ignored. `apply.sh` refuses to push any object with an unresolved `${VAR}`. It does not delete
-objects removed from `config/` — use `scripts/admin.sh DELETE <kind>/<id>`.
-
-## Rollback
-
-| Scope | Command | Reversible |
+| Setting | Default | Meaning |
 |---|---|---|
-| One shell | `source scripts/kiro-via-gateway off` | yes |
-| Stop interception, keep proxy | Empty `squid/hosts` (keep the comment lines), `docker compose restart squid` | yes |
-| Stop the stack | `docker compose down` | yes (config kept in etcd volume) |
-| Full teardown | `docker compose down -v` | **no** — deletes etcd data and audit logs; re-run `apply.sh` to rebuild |
+| `APISIX_ADMIN_KEY`, `AI_GW_DEMO_KEY`, `AI_GW_MOCK_TOKEN` | generated | Admin API key, demo consumer key for the AI route, mock LLM token. |
+| `CONSOLE_USER`, `CONSOLE_PASSWORD_HASH` | generated | Portal sign-in (scrypt hash). Change with `scripts/console-passwd.sh <user> --stdin`. |
+| `KGW_BIND_ADDR`, `KGW_PORT` | `127.0.0.1`, `9180` | Where the portal listens. |
+| `KGW_PROXY_BIND_ADDR` | `127.0.0.1` | Where Squid's :3128 listens. |
+| `CONSOLE_ALLOW_CIDRS` | `127.0.0.0/8,172.30.0.1/32` | Networks allowed to use the portal (keep the defaults; they are the host's own scripts). |
+| `CONSOLE_TRUSTED_PROXY_CIDRS` | empty | Only behind CloudFront: networks whose `CloudFront-Viewer-Address` header is trusted. |
+| `KGW_PROXY_ALLOW_CIDRS` | empty (this host only) | Networks allowed to use the proxy. |
+| `KGW_PUBLIC_NAMES` | empty | Extra DNS names / IPs for the portal certificate. |
+| `BEDROCK_GUARDRAIL_ID`, `BEDROCK_GUARDRAIL_VERSION`, `AWS_REGION` | empty, `1`, `us-east-1` | Bedrock layer. Empty ID = the layer reports unavailable and the fail mode applies. |
+| `PROMPT_LOG` | `masked` | `masked`: prompts stored with rule matches masked. `off`: no prompt text stored. |
+| `OPENAI_API_KEY` | unset | Use OpenAI instead of the mock LLM on the AI route (`scripts/apply.sh` after setting). |
+| `KGW_CONSOLE_IMAGE`, `KGW_ML_GUARD_IMAGE` | local builds | Use released images, e.g. `ghcr.io/<owner>/kiro-gateway-console:1.0.0`, then `docker compose pull`. |
 
-Nothing outside this directory is modified: no `/etc/hosts`, no system trust store, no Kiro settings.
+Rules start from `config/guardrails.default.json` and live in `data/guardrails.json` (its own git
+history, written by the portal). Intercepted hosts: `squid/hosts`, with matching `config/routes` and
+`config/upstreams` (`scripts/intercept-host.sh <host>` adds one). The defaults cover kiro-cli's
+`us-east-1` endpoints; re-check after Kiro upgrades.
 
-## Guardrail Console (web UI)
+AWS stack parameters: `ProxyAllowedCidr`, `CloudFrontWebAclArn` (only outside us-east-1, see the
+parameter description), `InstanceType`, `DataVolumeSize`, `SnapshotRetentionDays`, `AlarmEmail`,
+`SourceRepoUrl`, `SourceRef`, and for the existing-VPC stack `VpcId`, `AvailabilityZone`, `PrivateSubnetId`,
+`PrivateSubnet2Id`. Supported regions: us-east-1, us-east-2, us-west-2, eu-central-1, eu-west-1,
+eu-west-3, ap-northeast-1, ap-south-1, ap-southeast-1, ap-southeast-2.
 
-`https://<host>:9180/`: one page to manage block rules and watch Kiro / AI route traffic. It is the
-**only public port**: the APISIX dashboard is at `https://<host>:9180/ui/` behind the same sign-in, and
-the APISIX Admin API is reachable only from inside Docker (and from the host at `127.0.0.1:9181`).
-Screens: `console/docs/*.png`.
+## Guardrail effectiveness
 
-- **Sign in**: `admin`, password in `pki/console-initial-password` (0600). Change it with
-  `scripts/console-passwd.sh admin --stdin` then `docker compose up -d console`.
-- **Test a prompt**: checks text against the saved rules; nothing is sent to Kiro or a model.
-- **Block rules / Protections**: edits stay local until **Save & apply**, which validates, applies to the
-  live gateway and commits `config/guardrails.json` to git as `Guardrail Console (<user>)`.
-- **Live activity / Blocks and traffic / Recent rule changes**: read from the audit log and git history.
+Measured on `docs/evaluation/testset.jsonl` (48 fake Thai and English prompts: 23 should be blocked, 25
+should pass):
 
-Rules live only in `config/guardrails.json` (shared by the Kiro guard and `ai-prompt-guard`), so editing
-the file and running `scripts/apply.sh` is equivalent to using the console.
-
-Security: HTTPS (test CA), IP allowlist (`CONSOLE_ALLOW_CIDRS` in `docker-compose.yml`), scrypt password
-hash in `.env`, Secure/HttpOnly/SameSite=Strict session, `X-Console` header + origin check on changes,
-strict CSP, 5 failed sign-ins → 5 min lockout. The container sees only the public CA cert from `pki/`
-and applies policy objects only (never certificates). Remote access needs one security group rule:
-TCP 9180 from your network.
-
-Tests: `console/tests/api_test.sh` (API) and
-`NODE_PATH=$(npm root -g) node console/tests/ui_e2e.js add|remove` (browser, needs Playwright).
-
-## Monitoring (Grafana + Prometheus + Loki + OpenTelemetry)
-
-`https://<host>:9180/grafana/` (or **Monitoring ↗** in the console header), behind the console sign-in:
-the console checks your session and passes your username to Grafana (auth proxy, trusted only from the
-console container). Grafana, Prometheus, Loki, Tempo and the OTel Collector have **no published ports**.
-
-| Dashboard | Shows | Source |
-|---|---|---|
-| 1 · Gateway overview | request rate, status codes, latency p50/p95, upstream vs gateway time, bandwidth | Prometheus (`prometheus` plugin) |
-| 2 · Guardrails | allowed vs blocked, blocks by rule / path / user, recent blocked prompts | Loki (audit log) |
-| 3 · Usage | Kiro chats and AI route calls per user, AI tokens per consumer/model | Loki + Prometheus |
-| 4 · Logs & traces | searchable audit log (path/result/rule/kind + text), recent traces | Loki + Tempo |
-
-Pipeline: APISIX `prometheus` → Prometheus (15d); APISIX `opentelemetry` → OTel Collector → Tempo (15d);
-audit log file → OTel Collector (`file_log` + `transform`) → Loki (15d; labels `path,result,rule,kind`,
-`user`/`trace_id` as structured metadata). Log lines link to traces (Loki derived field `trace_id`).
-Dashboards are code: edit `monitoring/grafana/build_dashboards.py`, run it, Grafana reloads in ~30 s.
-End-to-end check (fresh tagged traffic -> Prometheus, Loki, Tempo, every Grafana panel):
-`python3 monitoring/tests/monitoring_check.py`. Screenshots: `monitoring/docs/`.
-
-## Known limits (PoC)
-
-### Second guardrail layer: Amazon Bedrock Guardrails
-
-Kiro chats that pass the regex rules go to `ml-guard` (a small container, `ml-guard/`), which calls
-Bedrock `ApplyGuardrail` with guardrail `kiro-gateway-poc` **version 3** (us-east-1, Standard tier,
-definition in `guardrail-eval/bedrock-guardrail.json`, id/version in `ml-guard/guardrail.env`). It blocks
-personal data (name, address, email, phone, card, SSN, IBAN, password, AWS keys, Thai ID) and a
-"data exfiltration" denied topic. Switch, timeout (default 1.5 s) and fail mode (default **open**: if
-Bedrock is slow or down, the regex verdict stands) are on the portal Rules page. Bedrock-detected spans
-are masked in the audit log like regex matches; audit rules read `bedrock:pii:NAME` etc. Only the user's
-message is sent to Bedrock (Kiro's own `--- CONTEXT ENTRY ---` wrapper is stripped); the regex rules
-still check the full content. Prompts go to Bedrock in your account (cross-Region inference stays in
-the US geography).
-
-**Prompt-attack (injection/jailbreak) detection is OFF** since v3. With it on (v1), Bedrock blocked
-normal coding-assistant prompts at every strength including LOW: `Reply with exactly: AFTER_OK
-FINAL-E2E-9558`, `Reply with exactly: OK KML1`, and (not deterministically) `You are a helpful assistant
-that writes pytest unit tests...`. Trade-off: most injection attempts now pass the gateway (2 of 5 in
-the test set are still blocked, by the PII/topic checks). The model's own safety training is the
-remaining defence. v3 also tightened the exfiltration topic definition, which in v2 blocked
-`Respond only with valid JSON, no prose, no markdown fences.`
-
-Measured on `guardrail-eval/testset.jsonl` (48 fake Thai + English prompts, 23 should block, 25 should
-pass):
-
-| Layer | Precision | Recall | False blocks | Misses |
+| Layers | Precision | Recall | False blocks | Misses |
 |---|---|---|---|---|
 | Regex rules alone | 0.89 | 0.35 | 1 | 15 |
-| Regex + Bedrock v1 (with prompt attack; first 40 prompts) | 0.96 | 1.00 | 1 | 0 |
-| **Regex + Bedrock v3 (current)** | **0.95** | **0.87** | 1 | 3 (all prompt attacks) |
+| Regex + Bedrock (PII + data-exfiltration topic) | **0.95** | **0.87** | 1 | 3 |
 
-The one false block is a 16-digit build number read as a card number. Bedrock adds ~0.5 s per Kiro
-chat (p50 ~450-500 ms, p95 ~560-660 ms from this server); ~US$0.25 per 1,000 short prompts (PII +
-topic). Results: `guardrail-eval/results-bedrock.json` (v1), `guardrail-eval/results-bedrock-v3.json`.
-Thai: the denied-topic filter lists Thai as supported; the PII filter does not list Thai but caught the
-Thai name/address cases; Thai-digit IDs are caught by the regex layer.
+The false block is a 16-digit build number read as a card number; the three misses are prompt-injection
+attempts. Bedrock's prompt-attack filter is deliberately off: at every strength it blocked ordinary
+coding-assistant prompts. Bedrock adds about 0.5 s per Kiro chat (p50 450-500 ms). Details, the
+guardrail definition and the Strands Decider evaluation (not used: too slow on CPU) are in
+[docs/evaluation](docs/evaluation).
 
-Strands Decider 2B was also evaluated (`guardrail-eval/decider-notes.md`) and **not** wired in: on this
-CPU-only host it needs ~9.5 GB RAM and ~8 s per prompt, and recall was 0.61 at threshold 0.5 (0 at 0.9).
-Usable only for offline review, or inline on a GPU host.
+## Tests
 
-### Other limits
+| Command | Checks |
+|---|---|
+| `scripts/verify.sh` | Stack, interception, non-Kiro tunnelling, blocks, Bedrock layer, AI route, real `kiro-cli` on/off. |
+| `console/tests/api_test.sh` | Portal API: sign-in, CSRF, rule edit/apply/history, tester, observability API. |
+| `python3 monitoring/tests/monitoring_check.py` | Fresh tagged traffic arrives in Prometheus, Loki, Tempo and every Grafana panel. |
+| `NODE_PATH=$(npm root -g) OUT=<dir> node console/tests/portal_e2e.js` | Browser run (Playwright): add a rule, real kiro-cli blocked, pages, remove the rule. |
+| `scripts/dashboard.sh check` | Portal lint, type check and unit tests (in Docker). |
+| `cd deploy && npm test` | CloudFormation template properties (network exposure, IAM, encryption, WAF). |
 
-- **Identity**: all Kiro traffic arrives from Squid's IP, so users are keyed by a token hash that changes
-  on token refresh. Needs a real identity source for production (see below).
-- **Inspection covers the current prompt only** (`conversationState.currentMessage.userInputMessage.content`).
-  It includes context Kiro injects. History is not re-scanned, so one blocked turn does not poison a session.
-- **Blocking, not rewriting**: modifying bodies or streamed responses is out of scope. Model responses are
-  not inspected.
-- **Privacy of stored prompts**: the guard masks every rule match before the prompt is written to the
-  audit log (`so*****th`, `41*****11`), so Loki, the Grafana log panels and the portal never hold the raw
-  secret; the prompt tester returns only masked previews. Text that no rule matches (source code, names,
-  addresses) is still stored for allowed and blocked prompts. Build with `PROMPT_LOG=off`
-  (`PROMPT_LOG=off ./scripts/apply.sh`) to store no prompt text at all, only verdict + rule.
-  `LOG_FULL_BODY=1` logs raw bodies and bypasses masking: debugging only.
-- **Evasion**: before matching, the Kiro guard maps full-width ASCII and Thai digits to ASCII and removes
-  zero-width characters. Spelled-out tricks (`name [at] example.com`) and splitting a secret across turns
-  or files are not caught by the regex rules (the Bedrock layer below catches some of them). The AI route's
-  stock `ai-prompt-guard` does not normalise.
-- **Fail-closed**: a Kiro inference request whose body cannot be read is blocked (rule `uninspectable`).
-- **One sign-in**: the console injects the APISIX admin key server-side for signed-in users, so the
-  Gateway pages need no separate key. Set `CONSOLE_ADMIN_KEY_FROM_SESSION=0` to require the key again.
-- **Upstream TLS trust** is pinned per upstream (`config/upstreams/_trust.json`: Amazon Root CA 1–4,
-  Starfield G2) because APISIX does not apply its global trust store when `tls.verify` is set. If AWS
-  changes roots, update that file.
-- **Endpoints are region/version specific** (`us-east-1`, kiro-cli 2.27.0). Re-run discovery after upgrades:
-  run kiro-cli via the proxy with an empty `squid/hosts` and read the Squid log.
-- Verified with `SSL_CERT_FILE`; not verified whether kiro-cli reads the OS trust store (matters for MDM).
+CI (`.github/workflows/ci.yml`) runs the linters, gitleaks over the full history, the portal checks,
+image builds with a Trivy scan, the template tests with cdk-nag and cfn-lint, and a full-stack smoke
+test. Tagging `v*.*.*` publishes multi-arch images to GHCR with SBOM and provenance
+(`.github/workflows/release.yml`).
 
-## Org-wide rollout path (same architecture, no redesign)
+## Repository layout
 
-1. **PKI** — replace the test CA with an internal intermediate CA. Issue leaf certs for the Kiro hosts
-   from it (or cert-manager on Kubernetes). Push the root to clients via MDM.
-2. **Clients** — MDM sets `HTTPS_PROXY`/`NO_PROXY` (or a PAC file) and the CA. If kiro-cli turns out to
-   ignore the OS store, also push `SSL_CERT_FILE`. Alternative without a proxy: Kiro's endpoint settings
-   (`api.codewhisperer.service`, `api.q.service`, …) pointed at APISIX — validate first.
-3. **Proxy tier** — Squid behind an internal TCP load balancer (NLB), ≥2 nodes across AZs. It is stateless;
-   `squid.conf` + `hosts` ship as config. If you already have a secure web gateway (Zscaler, Netskope, …),
-   have it forward the Kiro hosts to APISIX instead and drop Squid.
-4. **APISIX** — deploy with the official Helm chart (`apisix/apisix`) on EKS/Kubernetes: data plane
-   behind an internal LB with HPA, 3-node etcd (or decoupled control plane / standalone YAML mode from
-   a ConfigMap). The same `config/` objects apply unchanged via `scripts/apply.sh` or ADC in CI.
-5. **Enforcement** — egress firewall / security groups: only the proxy tier may reach the Kiro hosts on
-   443. Otherwise users can bypass the gateway by unsetting `HTTPS_PROXY`.
-6. **Identity** — Squid proxy auth (Kerberos/SSO) or mTLS client certs, passed to APISIX for real per-user
-   attribution; AI Gateway consumers via `openid-connect` instead of static keys.
-7. **Inspection** — replace the demo Lua rules with `forward-auth` to a central DLP service, shared by the
-   Kiro and AI Gateway routes. Decide fail-open vs fail-closed.
-8. **Logs & data handling** — ship audit logs (`kafka-logger`/`http-logger`/`elasticsearch-logger`) to the
-   SIEM/S3 with retention. Prompts contain source code: get privacy/legal sign-off first.
-9. **Limits** — switch `limit-count`/`ai-rate-limiting` to `policy: redis` so limits are shared across replicas.
-10. **AI providers** — `ai-proxy` also supports `bedrock` (SigV4), `anthropic`, `azure-openai`, `gemini`.
+```
+config/       APISIX objects (routes, upstreams, plugin metadata) and the default rules
+policy/       the Kiro guard (Lua)
+scripts/      init, apply, build-policy, certificates, kiro-via-gateway, verify
+squid/        proxy configuration and the intercepted host list
+console/      portal backend (FastAPI), sign-in page, tests
+dashboard/    the portal UI: pinned upstream APISIX dashboard + our patch series (scripts/dashboard.sh)
+ml-guard/     Bedrock Guardrails layer
+monitoring/   Prometheus, OTel Collector, Loki, Tempo, Grafana (dashboards as code), monitoring test
+deploy/       AWS CDK app and instance bootstrap
+docs/         runbook, security notes, rollout guide, guardrail evaluation, design notes
+```
 
-Also check Kiro's built-in admin controls (e.g. prompt logging, if available on your plan) — they may
-cover the logging requirement without interception.
+## Limits
+
+- **Identity**: Kiro traffic is attributed to a hash of the user's bearer token, which changes when the
+  token refreshes. Per-user identity needs a real identity source (see [docs/rollout.md](docs/rollout.md)).
+- **What is inspected**: the current prompt of each Kiro chat request (including context Kiro adds).
+  History is not re-scanned and model responses are not inspected. Requests whose body cannot be read
+  are blocked (`uninspectable`).
+- **Bypass**: users who unset `HTTPS_PROXY` reach Kiro directly unless egress to the Kiro hosts is
+  limited to the gateway (firewall / security groups).
+- **Evasion**: the guard normalises full-width characters, Thai digits and zero-width characters
+  before matching. Spelled-out or split secrets are not caught by regex; the Bedrock layer catches some.
+- **Region and version**: intercepted hosts are the `us-east-1` endpoints observed with kiro-cli 2.27.
+  Whether Kiro also honours the OS trust store (as well as `SSL_CERT_FILE`) is not yet verified.
+
+Operations: [docs/runbook.md](docs/runbook.md). Org-wide rollout: [docs/rollout.md](docs/rollout.md).
+
+## License and trademarks
+
+Apache License 2.0 ([LICENSE](LICENSE)). The portal is a modified version of
+[Apache APISIX Dashboard](https://github.com/apache/apisix-dashboard) (Apache-2.0); see [NOTICE](NOTICE).
+
+Kiro Gateway is an independent project, not affiliated with or endorsed by Amazon Web Services or the
+Kiro team. Kiro, AWS and Amazon Bedrock are trademarks of Amazon.com, Inc. or its affiliates; the Kiro
+logo (from [thesvg.org](https://thesvg.org/icons/kiro)) is used only to identify the product this
+gateway works with. Replace it if you publish a fork under your own brand.
