@@ -27,6 +27,11 @@ fill() {
 fill APISIX_ADMIN_KEY "$(openssl rand -hex 24)"
 fill AI_GW_DEMO_KEY "$(openssl rand -hex 24)"
 fill AI_GW_MOCK_TOKEN "$(openssl rand -hex 24)"
+# The console container runs as the user owning this checkout, so it can write data/ (rules,
+# their git history). Never root: as root (e.g. a provisioning script) fall back to 1000.
+uid=$(id -u); gid=$(id -g); (( uid == 0 )) && { uid=1000; gid=1000; }
+fill KGW_UID "$uid"
+fill KGW_GID "$gid"
 set -a; source .env; set +a
 
 mkdir -p pki data && chmod 700 pki

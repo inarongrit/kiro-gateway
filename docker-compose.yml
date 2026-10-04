@@ -73,7 +73,7 @@ services:
     read_only: true
     tmpfs: [/tmp]
     depends_on: [apisix]
-    user: "1000:1000"
+    user: "${KGW_UID:-1000}:${KGW_GID:-1000}"   # owner of the checkout (scripts/init.sh sets it)
     env_file: .env                     # admin key (for apply.sh) + CONSOLE_USER/CONSOLE_PASSWORD_HASH
     environment:
       GW_DIR: /gw
