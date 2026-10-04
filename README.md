@@ -88,10 +88,11 @@ to call `bedrock:ApplyGuardrail`, run `docker compose up -d ml-guard`, and switc
 
 `deploy/` is a CDK app (TypeScript) that also synthesizes to a plain CloudFormation template.
 
-![Kiro Gateway on AWS, revealed layer by layer: Kiro clients through an internal NLB to Squid and APISIX, the Bedrock guardrail check, egress through NAT to the Kiro endpoints, the portal behind CloudFront, AWS WAF and an internal ALB, and the EBS volume, Secrets Manager, Systems Manager and CloudWatch](docs/images/architecture-aws.gif)
+![Kiro Gateway on AWS: Kiro clients through an internal NLB to Squid and APISIX with the guard, a Bedrock guardrail check, egress through NAT to the Kiro endpoints, the portal behind CloudFront, AWS WAF and an internal ALB, and the EBS volume, Secrets Manager, Systems Manager and CloudWatch](docs/images/architecture-aws.svg)
 
-<sub>Animated: Kiro path first, then the guardrail layer, the portal and operations. Still image:
-[architecture-aws.png](docs/images/architecture-aws.png).</sub>
+<sub>Animated SVG (the arrows show the direction of each flow). Also as a
+[layer-by-layer reveal (GIF)](docs/images/architecture-aws.gif) and a
+[still PNG](docs/images/architecture-aws.png).</sub>
 
 What the stack creates:
 

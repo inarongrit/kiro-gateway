@@ -15,7 +15,7 @@ are not part of this repository.
 The Kiro logo (console/web/static/kiro.svg, from https://thesvg.org/icons/kiro) is a trademark of
 Amazon.com, Inc. or its affiliates and is not covered by the Apache License of this repository.
 
-The architecture diagram (docs/images/architecture-aws.gif, architecture-aws.png) uses AWS
+The architecture diagram (docs/images/architecture-aws.svg, .gif, .png) uses AWS
 Architecture Icons (https://aws.amazon.com/architecture/icons/) under their terms of use, the Kiro
 logo above, and the Inter typeface (SIL Open Font License 1.1). It contains no AWS wordmark or
 Amazon Ember font.
