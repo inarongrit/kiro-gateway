@@ -43,6 +43,9 @@ Apps ──API key──▶ APISIX /v1/chat/completions ──ai-proxy──▶ 
 | Console | FastAPI app serving the portal (a fork of the APISIX dashboard, built from `dashboard/patches`), the rules API and a read-only observability API. Holds the APISIX admin key server-side. |
 | Monitoring | Prometheus, OpenTelemetry Collector, Loki, Tempo, Grafana. No published ports; Grafana is reached through the portal sign-in. |
 
+On AWS the same containers run on one instance behind CloudFront, AWS WAF and internal load
+balancers: see the [animated diagram](#deploy-to-aws).
+
 Clients need two things: `HTTPS_PROXY` pointing at the gateway, and trust in the gateway CA. Kiro
 checks certificates and rejects an unknown CA, so it cannot be intercepted silently. Nothing else on
 the client machine changes (`scripts/kiro-via-gateway` sets both for one shell).
@@ -85,11 +88,10 @@ to call `bedrock:ApplyGuardrail`, run `docker compose up -d ml-guard`, and switc
 
 `deploy/` is a CDK app (TypeScript) that also synthesizes to a plain CloudFormation template.
 
-```
-Browser ─HTTPS─▶ CloudFront + AWS WAF ─VPC origin─▶ internal ALB ─HTTPS─▶ ┐
-Kiro clients (in the VPC / peered) ─▶ internal NLB :3128 ───────────────▶ ├ gateway instance (private subnet)
-                                                                          ┘   └─ encrypted data volume, daily snapshots
-```
+![Kiro Gateway on AWS, revealed layer by layer: Kiro clients through an internal NLB to Squid and APISIX, the Bedrock guardrail check, egress through NAT to the Kiro endpoints, the portal behind CloudFront, AWS WAF and an internal ALB, and the EBS volume, Secrets Manager, Systems Manager and CloudWatch](docs/images/architecture-aws.gif)
+
+<sub>Animated: Kiro path first, then the guardrail layer, the portal and operations. Still image:
+[architecture-aws.png](docs/images/architecture-aws.png).</sub>
 
 What the stack creates:
 
@@ -272,6 +274,8 @@ guardrail definition and the Strands Decider evaluation (not used: too slow on C
 | `console/tests/api_test.sh` | Portal API: sign-in, CSRF, rule edit/apply/history, tester, observability API. |
 | `python3 monitoring/tests/monitoring_check.py` | Fresh tagged traffic arrives in Prometheus, Loki, Tempo and every Grafana panel. |
 | `NODE_PATH=$(npm root -g) OUT=<dir> node console/tests/portal_e2e.js` | Browser run (Playwright): add a rule, real kiro-cli blocked, pages, remove the rule. |
+| `B=https://127.0.0.1:9180 PW=… NODE_PATH=$(npm root -g) node console/tests/signin_e2e.js` | Sign-in page: redirects, wrong password, `?next=` cannot leave the gateway. |
+| `console/tests/portal_sweep.js` (see its header) | Accessibility sweep of every portal page with axe-core. |
 | `scripts/dashboard.sh check` | Portal lint, type check and unit tests (in Docker). |
 | `cd deploy && npm test` | CloudFormation template properties (network exposure, IAM, encryption, WAF). |
 

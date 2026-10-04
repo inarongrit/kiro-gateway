@@ -3,16 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kiro Gateway</title>
+<title>Kiro Gateway · sign in</title>
 <link rel="icon" type="image/svg+xml" href="/static/kiro.svg">
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/app.js" defer></script>
 </head>
 <body>
-<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-
-<!-- Sign in -->
-<main id="login" class="login hidden">
+<!-- Sign-in page for the portal (/ui/) and Grafana (/grafana/); they redirect here with ?next=. -->
+<main id="login" class="login">
   <div class="card stack">
     <h1 class="brand"><img src="/static/kiro.svg" alt="" width="28" height="28">Kiro Gateway</h1>
     <div class="mu">Sign in to manage what Kiro and the AI gateway are allowed to send.</div>
@@ -24,122 +22,5 @@
     </form>
   </div>
 </main>
-
-<!-- App -->
-<div id="app" class="shell hidden">
-  <header class="top">
-    <h1 class="brand"><img src="/static/kiro.svg" alt="" width="28" height="28">Kiro Gateway</h1>
-    <span class="mu small"><span id="healthDot" class="dot"></span> <span id="healthTxt">checking gateway…</span></span>
-    <span class="grow"></span>
-    <label class="mu small row">Window
-      <select id="hours" class="in sm-in">
-        <option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option>
-      </select></label>
-    <span class="mu small">Signed in as <b id="me"></b></span>
-    <a class="btn sm p" href="/ui/">Open portal ↗</a>
-    <a class="btn sm ghost" href="/grafana/" target="_blank" rel="noopener noreferrer">Monitoring ↗</a>
-    <a class="btn sm ghost" href="/ui/" target="_blank" rel="noopener noreferrer">APISIX dashboard ↗</a>
-    <button id="logout" class="btn sm ghost">Sign out</button>
-  </header>
-
-  <section class="kpis" aria-label="Summary">
-    <div class="card"><div class="mu small">Chat requests</div><div id="kReq" class="kpi">–</div></div>
-    <div class="card"><div class="mu small">Blocked</div><div id="kBlk" class="kpi danger">–</div></div>
-    <div class="card"><div class="mu small">Active users</div><div id="kUsr" class="kpi">–</div></div>
-    <div class="card"><div class="mu small">Kiro chat latency p50 / p95 (completed chats)</div><div id="kLat" class="kpi">–</div></div>
-    <div class="card"><div class="mu small">Protections on</div><div id="kProt" class="kpi ok">–</div></div>
-  </section>
-
-  <div class="cols">
-    <div class="stack">
-      <section class="card stack" aria-labelledby="tTitle">
-        <h2 id="tTitle">Test a prompt</h2>
-        <div class="mu small">Checks text against the <b>saved</b> rules. Nothing is sent to Kiro or a model.</div>
-        <label class="f">Prompt<textarea id="tText" class="in" rows="3" placeholder="Paste a prompt, e.g. my key is AKIA…"></textarea></label>
-        <div class="row">
-          <select id="tPath" class="in" aria-label="Where the prompt is sent"><option value="kiro">Kiro chat</option><option value="ai">AI route (/v1/chat/completions)</option></select>
-          <button id="tBtn" class="btn p">Test</button>
-        </div>
-        <div id="tRes" class="result hidden" role="status" aria-live="polite"></div>
-      </section>
-
-      <section class="card stack" aria-labelledby="rTitle">
-        <div class="row between"><h2 id="rTitle">Block rules</h2><button id="addRule" class="btn p sm">+ Add rule</button></div>
-        <div class="mu small">A prompt matching any switched-on rule is blocked before it reaches the model.</div>
-        <div id="rules" class="stack"></div>
-      </section>
-
-      <section class="card stack" aria-labelledby="gTitle">
-        <h2 id="gTitle">Protections</h2>
-        <div id="guards" class="stack"></div>
-        <label class="f">Message shown to blocked Kiro users<input id="blockMsg" class="in" maxlength="300"></label>
-      </section>
-    </div>
-
-    <div class="stack">
-      <section class="card stack" aria-labelledby="eTitle">
-        <div class="row between"><h2 id="eTitle">Live activity</h2><span class="mu small" id="evCount"></span></div>
-        <div class="row wrap">
-          <input id="eQ" class="in grow" placeholder="Search prompt, user or rule" aria-label="Search">
-          <select id="eRes" class="in" aria-label="Result"><option value="">All results</option><option value="blocked">Blocked</option><option value="allowed">Allowed</option><option value="rate_limited">Rate limited</option><option value="error">Errors</option></select>
-          <select id="ePath" class="in" aria-label="Path"><option value="">Kiro + AI route</option><option value="kiro">Kiro</option><option value="ai">AI route</option></select>
-        </div>
-        <label class="cb mu small"><input id="eAll" type="checkbox"> Include background calls (telemetry, profile, model list)</label>
-        <div id="events" class="evs" aria-live="off"></div>
-        <div class="mu small">Click a row to see the full prompt. Refreshes every 5 seconds.</div>
-      </section>
-
-      <section class="card stack" aria-labelledby="sTitle">
-        <h2 id="sTitle">Blocks and traffic</h2>
-        <div><div class="mu small">Requests over time (green allowed, red blocked)</div><div id="timeline" class="tl" role="img" aria-label="Requests over time"></div></div>
-        <div><div class="mu small">Top rules hit</div><div id="byRule" class="bars"></div></div>
-        <div><div class="mu small">Users with most blocks</div><div id="byUser" class="bars"></div></div>
-      </section>
-
-      <section class="card stack" aria-labelledby="hTitle">
-        <h2 id="hTitle">Recent rule changes</h2>
-        <ul id="history" class="hist mu small"></ul>
-      </section>
-    </div>
-  </div>
-</div>
-
-<!-- Unsaved changes -->
-<div id="savebar" class="savebar hidden" role="region" aria-label="Unsaved changes">
-  <div class="inner">
-    <b id="dirtyTxt">Unsaved changes</b><span class="mu small">Saving applies the rules to the live gateway and records the change in git.</span>
-    <span class="grow"></span>
-    <button id="discard" class="btn">Discard</button>
-    <button id="save" class="btn p">Save &amp; apply</button>
-  </div>
-</div>
-
-<!-- Rule editor -->
-<dialog id="ruleDlg" aria-labelledby="dlgTitle">
-  <form id="ruleForm" class="stack" method="dialog">
-    <h2 id="dlgTitle">Rule</h2>
-    <label class="f">Name<input class="in" name="label" maxlength="80" required placeholder="e.g. Customer account numbers"></label>
-    <label class="f">Description (optional)<input class="in" name="description" maxlength="300" placeholder="Why this is blocked"></label>
-    <label class="f">Pattern (regular expression)
-      <input class="in mono" name="pattern" maxlength="1000" required placeholder="e.g. ACCT-\d{8}">
-    </label>
-    <div id="patMsg" class="small mu">Plain words work too. Use \d for a digit, [A-Z] for a capital letter.</div>
-    <label class="cb"><input type="checkbox" name="case_insensitive"> Ignore upper/lower case</label>
-    <fieldset class="row"><legend class="mu small">Applies to</legend>
-      <label class="cb"><input type="checkbox" name="kiro" checked> Kiro chat</label>
-      <label class="cb"><input type="checkbox" name="ai" checked> AI route</label>
-    </fieldset>
-    <label class="cb"><input type="checkbox" name="enabled" checked> Switched on</label>
-    <div class="mu small">ID: <span id="ruleId" class="mono"></span></div>
-    <div id="dlgErr" class="err" role="alert"></div>
-    <div class="row">
-      <button id="delRule" type="button" class="btn d">Delete rule</button>
-      <span class="grow"></span>
-      <button type="button" id="dlgCancel" class="btn">Cancel</button>
-      <button type="submit" class="btn p">Done</button>
-    </div>
-    <div class="mu small">Changes are kept until you press <b>Save &amp; apply</b>.</div>
-  </form>
-</dialog>
 </body>
 </html>
