@@ -46,7 +46,7 @@ USER 1000:1000
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp
 EXPOSE 9200
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD ["curl", "-fsS", "-o", "/dev/null", "--cacert", "/gw/pki/ca.crt", "https://localhost:9200/api/health"]
+  CMD ["curl", "-fsS", "-o", "/dev/null", "--cacert", "/etc/kiro-gateway/ca.crt", "https://localhost:9200/api/health"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9200", \
      "--ssl-certfile", "/tls/admin.crt", "--ssl-keyfile", "/tls/admin.key", \
      "--no-server-header", "--no-proxy-headers"]

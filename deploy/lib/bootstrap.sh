@@ -9,7 +9,17 @@ exec > >(tee -a /var/log/kiro-gateway-bootstrap.log) 2>&1
 signal() {
   /opt/aws/bin/cfn-signal -e "$1" --stack "$KGW_STACK" --resource "$KGW_ASG_LOGICAL_ID" --region "$KGW_REGION" || true
 }
-trap 'echo "bootstrap FAILED at line $LINENO"; signal 1' ERR
+trap 'echo "bootstrap FAILED at line $LINENO"; diagnose; signal 1' ERR
+diagnose() {   # printed to the boot log (EC2 system log), which is all an operator sees of a failed boot
+  set +e
+  docker compose -f /data/kiro-gateway/docker-compose.yml ps -a 2>&1 | tail -15
+  for c in $(docker ps -aq --filter health=unhealthy); do
+    echo "--- unhealthy $(docker inspect -f '{{.Name}}' "$c")"
+    docker inspect -f '{{range .Mounts}}{{.Type}} {{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' "$c"
+    docker inspect -f '{{range .State.Health.Log}}{{.Output}}{{end}}' "$c" | tail -3
+    docker logs --tail 15 "$c" 2>&1
+  done
+}
 aws() { command aws --region "$KGW_REGION" "$@"; }
 
 echo "== packages"
@@ -56,9 +66,20 @@ jq -n --arg r "$KGW_REGION" --arg g "$KGW_LOG_GROUP" '{
   "log-opts": {"awslogs-region": $r, "awslogs-group": $g, "tag": "{{.Name}}", "mode": "non-blocking"}}' \
   > /etc/docker/daemon.json
 systemctl daemon-reload && systemctl enable --now docker
+# Docker's data-root is on the data volume, so on a replacement instance the previous instance's
+# containers auto-start here, with bind mounts into the checkout we are about to replace. Stop them;
+# "up --force-recreate" below starts them again with fresh mounts.
+running=$(docker ps -q)
+if [[ -n $running ]]; then echo "stopping $(wc -w <<<"$running") container(s) left from the previous instance"; docker stop -t 20 $running >/dev/null; fi
 
 echo "== source"
 APP=/data/kiro-gateway; NEW=$APP.new
+# A boot that failed mid-swap may have left the state (.env, pki, data) in $NEW: move it back
+# before $NEW is cleared, never delete it.
+mkdir -p "$APP"
+for f in .env pki data; do
+  if [[ -e $NEW/$f && ! -e $APP/$f ]]; then mv "$NEW/$f" "$APP/"; echo "recovered $f from an interrupted update"; fi
+done
 rm -rf "$NEW"
 if [[ -n ${KGW_SOURCE_S3:-} ]]; then
   aws s3 cp --quiet "$KGW_SOURCE_S3" /tmp/kgw-src.zip && unzip -q /tmp/kgw-src.zip -d "$NEW" && rm -f /tmp/kgw-src.zip
@@ -84,7 +105,12 @@ setenv() {   # KEY VALUE: (re)set on every boot so stack parameter changes apply
 }
 setenv KGW_BIND_ADDR 0.0.0.0
 setenv KGW_PROXY_BIND_ADDR 0.0.0.0
-setenv CONSOLE_ALLOW_CIDRS "127.0.0.0/8,172.30.0.1/32,$KGW_PORTAL_CIDR"
+# Portal: reachable only through CloudFront -> internal ALB (the ALB drops requests without
+# CloudFront's secret origin header). Access control at the edge is AWS WAF + the sign-in, so the
+# console accepts any viewer IP, and trusts CloudFront-Viewer-Address only from this VPC (the ALB).
+setenv CONSOLE_ALLOW_CIDRS "0.0.0.0/0,::/0"
+mac=$(imds mac)
+setenv CONSOLE_TRUSTED_PROXY_CIDRS "$(imds "network/interfaces/macs/$mac/vpc-ipv4-cidr-blocks" | paste -sd, -)"
 setenv KGW_PROXY_ALLOW_CIDRS "$KGW_PROXY_CIDR"
 setenv KGW_PUBLIC_NAMES "$KGW_PORTAL_DNS"
 setenv BEDROCK_GUARDRAIL_ID "$KGW_GUARDRAIL_ID"
@@ -123,7 +149,7 @@ fi
 
 echo "== start"
 docker compose build -q
-docker compose up -d --wait --wait-timeout 300
+docker compose up -d --force-recreate --remove-orphans --wait --wait-timeout 300
 scripts/apply.sh
 # Last: everything above ran as root (apply.sh writes data/generated/); the console container
 # runs as uid 1000 (ec2-user) and must own the checkout to save rules.

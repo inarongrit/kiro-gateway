@@ -7,6 +7,8 @@ import {
 } from 'aws-cdk-lib';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as bedrock from 'aws-cdk-lib/aws-bedrock';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as dlm from 'aws-cdk-lib/aws-dlm';
@@ -18,6 +20,7 @@ import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import { GUARDRAIL } from './guardrail-policy';
 
@@ -38,6 +41,14 @@ export interface KiroGatewayStackProps extends StackProps {
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const PORTAL_PORT = 9180;   // KGW_PORT on the host (console container port 9200)
+const ORIGIN_HEADER = 'X-Kgw-Origin-Verify';   // secret header CloudFront adds; the ALB requires it
+/** AWS-managed prefix list com.amazonaws.global.cloudfront.origin-facing, per supported region. */
+const CLOUDFRONT_ORIGIN_FACING: Record<string, string> = {
+  'us-east-1': 'pl-3b927c52', 'us-east-2': 'pl-b6a144df', 'us-west-2': 'pl-82a045eb',
+  'eu-central-1': 'pl-a3a144ca', 'eu-west-1': 'pl-4fa04526', 'eu-west-3': 'pl-75b1541c',
+  'ap-northeast-1': 'pl-58a04531', 'ap-south-1': 'pl-9aa247f3', 'ap-southeast-1': 'pl-31a34658',
+  'ap-southeast-2': 'pl-b8a742d1',
+};
 const PROXY_PORT = 3128;
 const CIDR_PATTERN = '^(\\d{1,3}\\.){3}\\d{1,3}/(\\d|[12]\\d|3[0-2])$';
 const TAG_KEY = 'KiroGateway';
@@ -50,15 +61,12 @@ export class KiroGatewayStack extends Stack {
       + 'regex + Amazon Bedrock Guardrails, portal, Prometheus/Loki/Tempo/Grafana) on one EC2 instance.';
 
     // ---- parameters ----------------------------------------------------------------------------
-    const portalCidr = new CfnParameter(this, 'PortalAllowedCidr', {
-      description: 'IPv4 CIDR allowed to reach the portal over HTTPS (e.g. your office egress /24). 0.0.0.0/0 is refused.',
-      allowedPattern: CIDR_PATTERN, constraintDescription: 'an IPv4 CIDR such as 203.0.113.0/24',
+    const webAclParam = new CfnParameter(this, 'CloudFrontWebAclArn', {
+      default: '',
+      description: 'Leave empty in us-east-1: the stack creates the AWS WAF web ACL for the portal. In other regions, '
+        + 'pass the ARN of a CLOUDFRONT-scope web ACL created in us-east-1 (CloudFront only accepts those).',
+      allowedPattern: '^$|^arn:aws[a-z-]*:wafv2:us-east-1:\\d{12}:global/webacl/\\S+$',
     });
-    // Up to two more portal networks (e.g. office + home); empty = unused.
-    const extraPortalCidrs = [2, 3].map((n) => new CfnParameter(this, `PortalAllowedCidr${n}`, {
-      default: '', description: `Optional additional IPv4 CIDR allowed to reach the portal (slot ${n}). Leave empty if unused.`,
-      allowedPattern: `^$|${CIDR_PATTERN}`, constraintDescription: 'empty, or an IPv4 CIDR such as 198.51.100.0/24',
-    }));
     const proxyCidr = new CfnParameter(this, 'ProxyAllowedCidr', {
       description: 'IPv4 CIDR of the Kiro clients that may use the proxy (port 3128 on the internal load balancer).',
       allowedPattern: CIDR_PATTERN, constraintDescription: 'an IPv4 CIDR such as 10.0.0.0/8',
@@ -93,12 +101,6 @@ export class KiroGatewayStack extends Stack {
     }
     new CfnRule(this, 'NotOpenToTheWorld', {
       assertions: [{
-        assert: Fn.conditionNot(Fn.conditionEquals(portalCidr.valueAsString, '0.0.0.0/0')),
-        assertDescription: 'PortalAllowedCidr must not be 0.0.0.0/0: restrict the portal to the networks that administer it.',
-      }, ...extraPortalCidrs.map((c) => ({
-        assert: Fn.conditionNot(Fn.conditionEquals(c.valueAsString, '0.0.0.0/0')),
-        assertDescription: `${c.logicalId} must not be 0.0.0.0/0.`,
-      })), {
         assert: Fn.conditionNot(Fn.conditionEquals(proxyCidr.valueAsString, '0.0.0.0/0')),
         assertDescription: 'ProxyAllowedCidr must not be 0.0.0.0/0: an open proxy can be abused by anyone who reaches it.',
       }],
@@ -121,19 +123,21 @@ export class KiroGatewayStack extends Stack {
     } else {
       const vpcId = new CfnParameter(this, 'VpcId', { type: 'AWS::EC2::VPC::Id', description: 'Existing VPC.' });
       const az = new CfnParameter(this, 'AvailabilityZone', {
-        type: 'AWS::EC2::AvailabilityZone::Name', description: 'Availability Zone of the two subnets below.',
+        type: 'AWS::EC2::AvailabilityZone::Name', description: 'Availability Zone of PrivateSubnetId (the gateway instance and its data volume).',
       });
       const priv = new CfnParameter(this, 'PrivateSubnetId', {
-        type: 'AWS::EC2::Subnet::Id', description: 'Private subnet with outbound internet (NAT) for the gateway instance and the internal proxy load balancer.',
+        type: 'AWS::EC2::Subnet::Id', description: 'Private subnet with outbound internet (NAT) for the gateway instance and the internal load balancers.',
       });
-      const pub = new CfnParameter(this, 'PublicSubnetId', {
-        type: 'AWS::EC2::Subnet::Id', description: 'Public subnet (same AZ) for the internet-facing portal load balancer.',
+      const priv2 = new CfnParameter(this, 'PrivateSubnet2Id', {
+        type: 'AWS::EC2::Subnet::Id', description: 'Second private subnet, in another Availability Zone (load balancers span two).',
       });
       vpc = ec2.Vpc.fromVpcAttributes(this, 'Vpc', {
-        vpcId: vpcId.valueAsString, availabilityZones: [az.valueAsString],
-        privateSubnetIds: [priv.valueAsString], publicSubnetIds: [pub.valueAsString],
+        vpcId: vpcId.valueAsString,
+        // the second AZ is never read (only subnet IDs are used for the load balancers)
+        availabilityZones: [az.valueAsString, Fn.select(1, Fn.getAzs())],
+        privateSubnetIds: [priv.valueAsString, priv2.valueAsString],
       });
-      groups.push({ label: 'Existing network', parameters: ['VpcId', 'AvailabilityZone', 'PrivateSubnetId', 'PublicSubnetId'] });
+      groups.push({ label: 'Existing network', parameters: ['VpcId', 'AvailabilityZone', 'PrivateSubnetId', 'PrivateSubnet2Id'] });
       Validations.of(vpc).acknowledge({
         id: 'Construct-Annotations::@aws-cdk/aws-ec2:noSubnetRouteTableId',
         reason: 'Imported subnets: the stack never reads their route tables.',
@@ -142,24 +146,18 @@ export class KiroGatewayStack extends Stack {
     // One instance, one AZ: the data volume is zonal. The ASG replaces a failed instance in place.
     const gwSubnet = vpc.privateSubnets[0];
 
+    // Portal path: viewer -HTTPS-> CloudFront (+ AWS WAF) -VPC origin-> internal ALB -HTTPS-> instance.
+    // VPC-origin traffic arrives from CloudFront's origin-facing addresses (seen in flow logs), so the
+    // ALB allows the AWS-managed prefix list for them, and forwards only requests that carry
+    // CloudFront's secret origin header (anything else: 403).
+    const cfPrefixLists = new CfnMapping(this, 'CloudFrontOriginFacing', {
+      mapping: Object.fromEntries(Object.entries(CLOUDFRONT_ORIGIN_FACING).map(([r, id]) => [r, { id }])),
+    });
     const portalLbSg = new ec2.SecurityGroup(this, 'PortalLbSg', {
-      vpc, allowAllOutbound: false, description: 'Kiro Gateway portal load balancer: HTTPS from PortalAllowedCidr',
+      vpc, allowAllOutbound: false, description: 'Kiro Gateway portal load balancer (internal): from CloudFront only',
     });
-    portalLbSg.addIngressRule(ec2.Peer.ipv4(portalCidr.valueAsString), ec2.Port.tcp(443), 'portal users');
-    extraPortalCidrs.forEach((c, i) => {
-      const used = new CfnCondition(this, `HasPortalCidr${i + 2}`, {
-        expression: Fn.conditionNot(Fn.conditionEquals(c.valueAsString, '')),
-      });
-      const rule = new ec2.CfnSecurityGroupIngress(this, `PortalLbIngress${i + 2}`, {
-        groupId: portalLbSg.securityGroupId, ipProtocol: 'tcp', fromPort: 443, toPort: 443,
-        cidrIp: c.valueAsString, description: `portal users (slot ${i + 2})`,
-      });
-      rule.cfnOptions.condition = used;
-      Validations.of(rule).acknowledge({
-        id: 'AwsSolutions::AwsSolutions-EC23',
-        reason: 'Ingress CIDR is a template parameter; the NotOpenToTheWorld rule refuses 0.0.0.0/0.',
-      });
-    });
+    portalLbSg.addIngressRule(ec2.Peer.prefixList(cfPrefixLists.findInMap(Aws.REGION, 'id')), ec2.Port.tcp(80),
+      'CloudFront origin-facing (VPC origin)');
     const proxyLbSg = new ec2.SecurityGroup(this, 'ProxyLbSg', {
       vpc, allowAllOutbound: false, description: 'Kiro Gateway proxy load balancer: port 3128 from ProxyAllowedCidr',
     });
@@ -173,12 +171,12 @@ export class KiroGatewayStack extends Stack {
     portalLbSg.addEgressRule(instanceSg, ec2.Port.tcp(PORTAL_PORT), 'to the gateway');
     proxyLbSg.addEgressRule(instanceSg, ec2.Port.tcp(PROXY_PORT), 'to the gateway');
 
-    // Both load balancers pass TCP through with the client IP preserved, so the gateway itself
-    // enforces the same allow lists (console CIDR check, Squid ACL) and serves its own TLS.
-    const portalLb = new elbv2.NetworkLoadBalancer(this, 'PortalLb', {
-      vpc, internetFacing: true, vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-      securityGroups: [portalLbSg], crossZoneEnabled: true,
+    const portalLb = new elbv2.ApplicationLoadBalancer(this, 'PortalAlb', {
+      vpc, internetFacing: false, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      securityGroup: portalLbSg, dropInvalidHeaderFields: true, idleTimeout: Duration.seconds(120),
     });
+    // The proxy load balancer passes TCP through with the client IP preserved, so Squid's own ACL
+    // (ProxyAllowedCidr) applies too.
     const proxyLb = new elbv2.NetworkLoadBalancer(this, 'ProxyLb', {
       vpc, internetFacing: false, vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [proxyLbSg], crossZoneEnabled: true,
@@ -259,6 +257,13 @@ export class KiroGatewayStack extends Stack {
         passwordLength: 24, excludePunctuation: true,
       },
     });
+    const originSecret = new secretsmanager.Secret(this, 'OriginVerify', {
+      description: 'Shared secret CloudFront sends to the portal load balancer (requests without it are refused).',
+      generateSecretString: {
+        secretStringTemplate: '{}', generateStringKey: 'value', passwordLength: 40, excludePunctuation: true,
+      },
+    });
+    const originSecretValue = originSecret.secretValueFromJson('value').unsafeUnwrap();   // a dynamic reference, not the value
     const caBackup = new secretsmanager.Secret(this, 'CaBackup', {
       description: 'Backup of the Kiro Gateway interception CA (key + certificate), written by the instance on first boot.',
       generateSecretString: { secretStringTemplate: '{}', generateStringKey: 'unset', passwordLength: 8, excludePunctuation: true },
@@ -318,7 +323,7 @@ export class KiroGatewayStack extends Stack {
     const env: string[] = [
       `KGW_STACK=${Aws.STACK_NAME}`, `KGW_REGION=${Aws.REGION}`, `KGW_ASG_LOGICAL_ID=${asgLogicalId}`,
       `KGW_VOLUME_ID=${volume.ref}`, `KGW_LOG_GROUP=${logGroup.logGroupName}`,
-      `KGW_PORTAL_CIDR=${[portalCidr, ...extraPortalCidrs].map((c) => c.valueAsString).join(',')}`, `KGW_PROXY_CIDR=${proxyCidr.valueAsString}`,
+      `KGW_PROXY_CIDR=${proxyCidr.valueAsString}`,
       `KGW_PORTAL_DNS=${portalLb.loadBalancerDnsName}`,
       `KGW_GUARDRAIL_ID=${guardrail.attrGuardrailId}`, `KGW_GUARDRAIL_VERSION=${guardrailVersion.attrVersion}`,
       `KGW_CONSOLE_SECRET=${consoleLogin.secretArn}`, `KGW_CA_SECRET=${caBackup.secretArn}`,
@@ -364,9 +369,50 @@ export class KiroGatewayStack extends Stack {
     Tags.of(asg).add(TAG_KEY, Aws.STACK_NAME, { applyToLaunchedInstances: true });
     Tags.of(asg).add('Name', `${Aws.STACK_NAME}-gateway`, { applyToLaunchedInstances: true });
 
-    const portalTg = portalLb.addListener('Https', { port: 443, protocol: elbv2.Protocol.TCP }).addTargets('Portal', {
-      port: PORTAL_PORT, protocol: elbv2.Protocol.TCP, targets: [asg], preserveClientIp: true,
-      deregistrationDelay: Duration.seconds(30), healthCheck: { protocol: elbv2.Protocol.TCP, interval: Duration.seconds(30) },
+    const portalListener = portalLb.addListener('Http', {
+      port: 80, protocol: elbv2.ApplicationProtocol.HTTP, open: false,
+      defaultAction: elbv2.ListenerAction.fixedResponse(403, { contentType: 'text/plain', messageBody: 'Forbidden' }),
+    });
+    const portalTg = new elbv2.ApplicationTargetGroup(this, 'PortalTargets', {
+      vpc, port: PORTAL_PORT, protocol: elbv2.ApplicationProtocol.HTTPS, targets: [asg],
+      deregistrationDelay: Duration.seconds(30),
+      healthCheck: { path: '/api/health', protocol: elbv2.Protocol.HTTPS, healthyHttpCodes: '200', interval: Duration.seconds(30) },
+    });
+    portalListener.addAction('FromCloudFront', {
+      priority: 1, conditions: [elbv2.ListenerCondition.httpHeader(ORIGIN_HEADER, [originSecretValue])],
+      action: elbv2.ListenerAction.forward([portalTg]),
+    });
+
+    // ---- CloudFront + AWS WAF ----------------------------------------------------------------------
+    const isUsEast1 = new CfnCondition(this, 'IsUsEast1', { expression: Fn.conditionEquals(Aws.REGION, 'us-east-1') });
+    const createAcl = new CfnCondition(this, 'CreateWebAcl', {
+      expression: Fn.conditionAnd(isUsEast1, Fn.conditionEquals(webAclParam.valueAsString, '')),
+    });
+    new CfnRule(this, 'WebAclAvailable', {
+      assertions: [{
+        assert: Fn.conditionOr(Fn.conditionEquals(Aws.REGION, 'us-east-1'),
+          Fn.conditionNot(Fn.conditionEquals(webAclParam.valueAsString, ''))),
+        assertDescription: 'Outside us-east-1, set CloudFrontWebAclArn (CloudFront web ACLs must be created in us-east-1).',
+      }],
+    });
+    const webAcl = this.portalWebAcl();
+    webAcl.cfnOptions.condition = createAcl;
+    const distribution = new cloudfront.Distribution(this, 'Portal', {
+      comment: `${Aws.STACK_NAME} portal`,
+      defaultBehavior: {
+        origin: origins.VpcOrigin.withApplicationLoadBalancer(portalLb, {
+          httpPort: 80, protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          customHeaders: { [ORIGIN_HEADER]: originSecretValue }, readTimeout: Duration.seconds(60),
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,   // every response is per-user
+        // all viewer headers (Host for the CSRF origin check, cookies) + CloudFront-Viewer-Address
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_AND_CLOUDFRONT_2022,
+      },
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+      webAclId: Fn.conditionIf(createAcl.logicalId, webAcl.attrArn, webAclParam.valueAsString).toString(),
     });
     const proxyTg = proxyLb.addListener('Proxy', { port: PROXY_PORT, protocol: elbv2.Protocol.TCP }).addTargets('Squid', {
       port: PROXY_PORT, protocol: elbv2.Protocol.TCP, targets: [asg], preserveClientIp: true,
@@ -374,10 +420,12 @@ export class KiroGatewayStack extends Stack {
     });
 
     // ---- alarms --------------------------------------------------------------------------------
-    for (const [name, tg] of [['Portal', portalTg], ['Proxy', proxyTg]] as const) {
+    const healthy = { period: Duration.minutes(1), statistic: 'Minimum' };
+    for (const [name, metric] of [['Portal', portalTg.metrics.healthyHostCount(healthy)],
+      ['Proxy', proxyTg.metrics.healthyHostCount(healthy)]] as const) {
       new cloudwatch.Alarm(this, `${name}Unhealthy`, {
         alarmDescription: `Kiro Gateway ${name.toLowerCase()} has no healthy target for 5 minutes`,
-        metric: tg.metrics.healthyHostCount({ period: Duration.minutes(1), statistic: 'Minimum' }),
+        metric,
         threshold: 1, comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
         evaluationPeriods: 5, treatMissingData: cloudwatch.TreatMissingData.BREACHING,
       }).addAlarmAction(new cwActions.SnsAction(alarmTopic));
@@ -385,8 +433,8 @@ export class KiroGatewayStack extends Stack {
 
     // ---- outputs + console layout ---------------------------------------------------------------
     new CfnOutput(this, 'PortalUrl', {
-      value: `https://${portalLb.loadBalancerDnsName}/`,
-      description: 'Portal (TLS cert issued by the gateway CA: trust CaCertificateParameter or accept the warning)',
+      value: `https://${distribution.distributionDomainName}/`,
+      description: 'Portal (CloudFront + AWS WAF; sign in with PortalLoginSecret)',
     });
     new CfnOutput(this, 'ProxyEndpoint', {
       value: `http://${proxyLb.loadBalancerDnsName}:${PROXY_PORT}`, description: 'HTTPS_PROXY for Kiro clients',
@@ -408,7 +456,7 @@ export class KiroGatewayStack extends Stack {
     this.templateOptions.metadata = {
       'AWS::CloudFormation::Interface': {
         ParameterGroups: [
-          { Label: { default: 'Access' }, Parameters: ['PortalAllowedCidr', 'PortalAllowedCidr2', 'PortalAllowedCidr3', 'ProxyAllowedCidr'] },
+          { Label: { default: 'Access' }, Parameters: ['ProxyAllowedCidr', 'CloudFrontWebAclArn'] },
           ...groups.map((g) => ({ Label: { default: g.label }, Parameters: g.parameters })),
           { Label: { default: 'Instance and storage' }, Parameters: ['InstanceType', 'DataVolumeSize', 'SnapshotRetentionDays'] },
           ...(props.source === 'git' ? [{ Label: { default: 'Source' }, Parameters: ['SourceRepoUrl', 'SourceRef'] }] : []),
@@ -420,10 +468,50 @@ export class KiroGatewayStack extends Stack {
     for (const sg of [portalLbSg, proxyLbSg]) {
       Validations.of(sg).acknowledge({
         id: 'AwsSolutions::AwsSolutions-EC23',
-        reason: 'Ingress CIDR is a template parameter; the NotOpenToTheWorld rule refuses 0.0.0.0/0.',
+        reason: 'Ingress CIDR is the VPC range or a template parameter; the NotOpenToTheWorld rule refuses 0.0.0.0/0.',
       });
     }
-    this.suppressNagFindings(role, asg, [portalLb, proxyLb], [consoleLogin, caBackup], alarmTopic, snapshotRole);
+    Validations.of(distribution).acknowledge(
+      { id: 'AwsSolutions-CFR1', reason: 'No geo restriction by design: access control is AWS WAF + the portal sign-in.' },
+      { id: 'AwsSolutions-CFR3', reason: 'The gateway logs every portal request itself (console log, CloudWatch); WAF samples requests.' },
+      { id: 'AwsSolutions-CFR4', reason: 'Default *.cloudfront.net certificate (no custom domain); add a domain + ACM certificate to enforce TLSv1.2_2021.' },
+    );
+    Validations.of(portalLb).acknowledge(
+      { id: 'AwsSolutions-ELB2', reason: 'Internal ALB behind CloudFront; the gateway logs every request itself (console log, CloudWatch).' },
+    );
+    this.suppressNagFindings(role, asg, [proxyLb], [consoleLogin, caBackup, originSecret], alarmTopic, snapshotRole);
+  }
+
+  /**
+   * AWS WAF for the portal (CLOUDFRONT scope, so it can only be created in us-east-1).
+   * Rate limits per viewer IP, AWS IP reputation, known bad inputs and the common rule set. The
+   * common rules' BODY/size checks run in COUNT mode: prompts, rule patterns and Grafana queries
+   * legitimately contain code, regexes and long bodies, and inspecting them is the gateway's job.
+   */
+  private portalWebAcl(): wafv2.CfnWebACL {
+    const vis = (name: string) => ({ cloudWatchMetricsEnabled: true, metricName: name, sampledRequestsEnabled: true });
+    const managed = (name: string, priority: number, countRules: string[] = []) => ({
+      name, priority, overrideAction: { none: {} }, visibilityConfig: vis(name),
+      statement: { managedRuleGroupStatement: {
+        vendorName: 'AWS', name, ruleActionOverrides: countRules.map((r) => ({ name: r, actionToUse: { count: {} } })),
+      } },
+    });
+    return new wafv2.CfnWebACL(this, 'PortalWebAcl', {
+      scope: 'CLOUDFRONT', defaultAction: { allow: {} }, visibilityConfig: vis('kiro-gateway-portal'),
+      description: 'Kiro Gateway portal: rate limits + AWS managed rules',
+      rules: [
+        { name: 'login-rate-limit', priority: 0, action: { block: {} }, visibilityConfig: vis('login-rate-limit'),
+          statement: { rateBasedStatement: { limit: 20, evaluationWindowSec: 300, aggregateKeyType: 'IP',
+            scopeDownStatement: { byteMatchStatement: { fieldToMatch: { uriPath: {} }, positionalConstraint: 'EXACTLY',
+              searchString: '/api/login', textTransformations: [{ priority: 0, type: 'NONE' }] } } } } },
+        { name: 'rate-limit', priority: 1, action: { block: {} }, visibilityConfig: vis('rate-limit'),
+          statement: { rateBasedStatement: { limit: 3000, evaluationWindowSec: 300, aggregateKeyType: 'IP' } } },
+        managed('AWSManagedRulesAmazonIpReputationList', 2),
+        managed('AWSManagedRulesKnownBadInputsRuleSet', 3),
+        managed('AWSManagedRulesCommonRuleSet', 4, ['SizeRestrictions_BODY', 'SizeRestrictions_QUERYSTRING',
+          'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY']),
+      ],
+    });
   }
 
   /** Every cdk-nag exception, with the reason it is acceptable here. */

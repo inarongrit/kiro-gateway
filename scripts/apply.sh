@@ -24,7 +24,7 @@ for kind in ${APPLY_KINDS:-plugin_metadata upstreams plugin_configs global_rules
       exit 1
     fi
     resp=$(mktemp)
-    code=$(curl -sS --cacert pki/ca.crt -o "$resp" -w '%{http_code}' -X PUT "$ADMIN/$kind/$id" \
+    code=$(curl -sS --cacert "${GW_CA:-pki/ca.crt}" -o "$resp" -w '%{http_code}' -X PUT "$ADMIN/$kind/$id" \
       -H "X-API-KEY: $APISIX_ADMIN_KEY" -H 'Content-Type: application/json' --data-binary "$body")
     echo "$kind/$id -> $code"
     if [[ ! "$code" =~ ^20[01]$ ]]; then

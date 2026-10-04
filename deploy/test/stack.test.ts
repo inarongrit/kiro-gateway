@@ -48,12 +48,7 @@ for (const [mode, t] of Object.entries(templates)) {
     const ingress = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'));
     const fromSg = ingress.filter((r) => r.Properties.SourceSecurityGroupId);
     assert.equal(fromSg.length, 2, 'instance: ingress from its two load balancer SGs only');
-    // the rest are the optional extra portal networks: 443 only, created only when the parameter is set
-    for (const r of ingress.filter((x) => !x.Properties.SourceSecurityGroupId)) {
-      assert.equal(r.Properties.FromPort, 443);
-      assert.match(r.Condition, /^HasPortalCidr[23]$/);
-      assert.match(JSON.stringify(r.Properties.CidrIp), /PortalAllowedCidr[23]/);
-    }
+
   });
 
   test(`${mode} VPC: single gateway, replaced in place, deploy waits for the bootstrap`, () => {
@@ -79,11 +74,48 @@ for (const [mode, t] of Object.entries(templates)) {
     assert.ok(!actions.some((a: string) => /^bedrock:(\*|Invoke)/.test(a)), 'no model invocation rights');
     assert.ok(!actions.some((a: string) => a.endsWith(':*') || a === '*'), 'no wildcard actions');
   });
+
+  test(`${mode} VPC: portal only via CloudFront + WAF -> internal ALB that needs the secret origin header`, () => {
+    // the portal ALB accepts only CloudFront's origin-facing prefix list
+    const sgs = t.findResources('AWS::EC2::SecurityGroup');
+    const albSgId = Object.keys(sgs).find((k) => /portal load balancer/.test(sgs[k].Properties.GroupDescription))!;
+    assert.equal(sgs[albSgId].Properties.SecurityGroupIngress, undefined, 'no inline (CIDR) ingress');
+    const albIngress = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'))
+      .filter((r) => JSON.stringify(r.Properties.GroupId).includes(albSgId));
+    assert.equal(albIngress.length, 1);
+    assert.equal(albIngress[0].Properties.FromPort, 80);
+    assert.match(JSON.stringify(albIngress[0].Properties.SourcePrefixListId), /CloudFrontOriginFacing/);
+    // no internet-facing load balancer at all
+    for (const lb of Object.values(t.findResources('AWS::ElasticLoadBalancingV2::LoadBalancer'))) {
+      assert.equal(lb.Properties.Scheme, 'internal');
+    }
+    t.hasResourceProperties('AWS::CloudFront::VpcOrigin', Match.objectLike({
+      VpcOriginEndpointConfig: Match.objectLike({ OriginProtocolPolicy: 'http-only', HTTPPort: 80 }),
+    }));
+    const dist = Object.values(t.findResources('AWS::CloudFront::Distribution'))[0].Properties.DistributionConfig;
+    assert.ok(dist.WebACLId, 'web ACL attached');
+    assert.equal(dist.DefaultCacheBehavior.ViewerProtocolPolicy, 'redirect-to-https');
+    const hdr = dist.Origins[0].OriginCustomHeaders.find((h: { HeaderName: string }) => h.HeaderName === 'X-Kgw-Origin-Verify');
+    assert.match(JSON.stringify(hdr.HeaderValue), /resolve:secretsmanager/, 'origin secret is a dynamic reference, not a literal');
+    // the ALB: default 403, forward only with the header
+    t.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', Match.objectLike({
+      Port: 80, DefaultActions: [Match.objectLike({ Type: 'fixed-response', FixedResponseConfig: Match.objectLike({ StatusCode: '403' }) })],
+    }));
+    t.hasResourceProperties('AWS::ElasticLoadBalancingV2::ListenerRule', Match.objectLike({
+      Conditions: [Match.objectLike({ Field: 'http-header', HttpHeaderConfig: Match.objectLike({ HttpHeaderName: 'X-Kgw-Origin-Verify' }) })],
+    }));
+    t.hasResourceProperties('AWS::WAFv2::WebACL', Match.objectLike({
+      Scope: 'CLOUDFRONT',
+      Rules: Match.arrayWith([Match.objectLike({ Name: 'login-rate-limit' }), Match.objectLike({ Name: 'AWSManagedRulesCommonRuleSet' })]),
+    }));
+    assert.equal(t.toJSON().Parameters.PortalAllowedCidr, undefined, 'no portal IP allow list');
+  });
 }
 
 test('existing VPC: network comes from parameters', () => {
   const p = templates.existing.toJSON().Parameters;
-  for (const k of ['VpcId', 'AvailabilityZone', 'PrivateSubnetId', 'PublicSubnetId']) assert.ok(p[k], k);
+  for (const k of ['VpcId', 'AvailabilityZone', 'PrivateSubnetId', 'PrivateSubnet2Id']) assert.ok(p[k], k);
+  assert.equal(p.PublicSubnetId, undefined, 'no public subnet needed');
   templates.existing.resourceCountIs('AWS::EC2::VPC', 0);
 });
 

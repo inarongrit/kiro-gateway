@@ -78,12 +78,13 @@ services:
     environment:
       GW_DIR: /gw
       APISIX_ADMIN_URL: https://apisix:9180
-      GW_CA: /gw/pki/ca.crt
+      GW_CA: /etc/kiro-gateway/ca.crt
       AUDIT_LOG: /audit/kiro-audit.log
       KGW_DATA_DIR: /gw/data
       # Who may reach the console/portal (CIDR list). Loopback + the Docker host are always needed
       # by the scripts; add your operator network or VPN range in .env.
       CONSOLE_ALLOW_CIDRS: ${CONSOLE_ALLOW_CIDRS:-127.0.0.0/8,172.30.0.1/32}
+      CONSOLE_TRUSTED_PROXY_CIDRS: ${CONSOLE_TRUSTED_PROXY_CIDRS:-}   # behind CloudFront: see .env.example
     volumes:
       # Code repo READ-ONLY; runtime state (live rules + their git history + generated policy)
       # in ./data. pki/ is masked: only the public CA cert is visible, private keys never enter.
@@ -92,7 +93,9 @@ services:
       - type: tmpfs
         target: /gw/pki
         tmpfs: { mode: 0755 }
-      - ./pki/ca.crt:/gw/pki/ca.crt:ro
+      # The public CA cert lives OUTSIDE the masked pki/ path: on some Docker versions the tmpfs
+      # above is mounted after a bind inside it, hiding the file.
+      - ./pki/ca.crt:/etc/kiro-gateway/ca.crt:ro
       - ./pki/admin:/tls:ro              # TLS cert/key for the console's HTTPS listener
       - apisix-audit:/audit:ro
     ports:

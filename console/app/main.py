@@ -159,7 +159,7 @@ def stats(_: str = Depends(user), hours: float = Query(24, gt=0, le=24 * 31)):
 @app.get("/api/status")
 def status(_: str = Depends(user)):
     """Gateway health as seen from the console: data plane up + Admin API reachable."""
-    ctx = ssl.create_default_context(cafile=os.environ.get("GW_CA", "/gw/pki/ca.crt"))
+    ctx = ssl.create_default_context(cafile=os.environ.get("GW_CA", "/etc/kiro-gateway/ca.crt"))
     out = {}
     for name, url, kw in (
         ("data_plane", "http://apisix:9080/", {}),
@@ -224,7 +224,7 @@ def obs_trace(trace_id: str, _: str = Depends(user)):
 # to APISIX inside the Docker network, so the Admin API is never exposed on its own. A console
 # session is required; the dashboard still asks for the APISIX admin key on top of that.
 ADMIN_UPSTREAM = os.environ.get("APISIX_ADMIN_URL", "https://apisix:9180")
-_PROXY_CTX = ssl.create_default_context(cafile=os.environ.get("GW_CA", "/gw/pki/ca.crt"))
+_PROXY_CTX = ssl.create_default_context(cafile=os.environ.get("GW_CA", "/etc/kiro-gateway/ca.crt"))
 _FWD_REQ = ("x-api-key", "content-type", "accept", "accept-language", "if-none-match", "if-modified-since")
 _FWD_RESP = ("content-type", "cache-control", "etag", "last-modified", "location")
 # CONSOLE_ADMIN_KEY_FROM_SESSION=0 restores the old behaviour (browser must also supply the key).

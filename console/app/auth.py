@@ -21,6 +21,13 @@ SESSION_TTL = int(os.environ.get("CONSOLE_SESSION_TTL", 8 * 3600))
 COOKIE = "gc_session"
 _ALLOW = [ipaddress.ip_network(c.strip()) for c in
           os.environ.get("CONSOLE_ALLOW_CIDRS", "127.0.0.0/8").split(",") if c.strip()]
+# Behind CloudFront (AWS deployment): the TCP peer is the internal load balancer, and the real
+# viewer is in CloudFront-Viewer-Address ("ip:port"). That header is trusted ONLY when the peer is
+# in one of these networks (the VPC); the load balancer itself only forwards requests that carry
+# CloudFront's secret origin header. Empty (the default) = direct connections, no header trusted.
+_TRUSTED_PROXIES = [ipaddress.ip_network(c.strip()) for c in
+                    os.environ.get("CONSOLE_TRUSTED_PROXY_CIDRS", "").split(",") if c.strip()]
+VIEWER_HEADER = "cloudfront-viewer-address"
 
 _sessions: dict[str, tuple[str, float]] = {}
 _failures: dict[str, list[float]] = {}
@@ -47,8 +54,21 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def client_ip(request: Request) -> str:
-    # Direct connections only: no proxy in front, so X-Forwarded-For is NOT trusted.
-    return request.client.host if request.client else ""
+    peer = request.client.host if request.client else ""
+    if not _TRUSTED_PROXIES:
+        return peer          # direct connections: X-Forwarded-For and friends are NOT trusted
+    try:
+        from_proxy = any(ipaddress.ip_address(peer) in net for net in _TRUSTED_PROXIES)
+    except ValueError:
+        from_proxy = False
+    viewer = request.headers.get(VIEWER_HEADER, "")
+    if from_proxy and viewer:
+        host = viewer.rsplit(":", 1)[0].strip("[]")   # "203.0.113.7:4711" or "2001:db8::1:4711"
+        try:
+            return str(ipaddress.ip_address(host))
+        except ValueError:
+            return peer
+    return peer
 
 
 def check_source(request: Request) -> None:
