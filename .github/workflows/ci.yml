@@ -83,6 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: first-run setup (.env, CA, certificates; the compose file needs .env)
+        run: scripts/init.sh
       - name: build images
         run: docker compose build console ml-guard
       - name: vulnerability scan (fail on fixable HIGH/CRITICAL)
@@ -91,8 +93,6 @@ jobs:
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.75.0 image \
               --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$img"
           done
-      - name: first-run setup
-        run: scripts/init.sh
       - name: start the stack
         run: docker compose up -d --wait --wait-timeout 180
       - name: apply gateway config

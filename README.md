@@ -20,7 +20,7 @@ Runs anywhere Docker Compose runs, or on AWS with one CloudFormation stack.
   traces, plus the full Apache APISIX dashboard, behind one sign-in.
 - **Monitoring as code**: Prometheus, Loki, Tempo and Grafana, provisioned with four dashboards.
 
-![Portal overview](docs/images/portal-overview.png)
+![Portal overview: share of Kiro prompts that passed every guardrail, blocks by rule, latency](docs/images/overview.png)
 
 ## How it works
 
@@ -175,6 +175,48 @@ Bedrock is per use, about US$0.25 per 1,000 short prompts). Use the
 | Gateway | The stock APISIX dashboard pages (routes, upstreams, consumers, SSL, plugins), using the server-side admin key. |
 
 Security model: [docs/security.md](docs/security.md).
+
+### A tour of the portal
+
+All screenshots are from a test stack with sample traffic; every value shown is fake.
+
+**Two layers, one verdict.** The prompt tester runs text through the live rules and the Bedrock
+guardrail without sending it anywhere else. Matches are masked in the result, as they are in every log.
+
+| Regex rules and Bedrock both catch an AWS key and an email | Only Bedrock catches the intent: a data-exfiltration request |
+|---|---|
+| ![Prompt tester: an AWS access key and an email address matched by the regex rules and by Bedrock, both masked](docs/images/tester-regex.png) | ![Prompt tester: a request to send the customer list to a personal Gmail blocked by the Bedrock data-exfiltration topic](docs/images/tester-bedrock.png) |
+
+**Rules you can change in minutes.** Each rule is a PCRE pattern applied to Kiro, the AI route or
+both. The editor checks the pattern as you type and previews matches; **Save & apply** pushes it to
+the live gateway and records who changed what in the rule history.
+
+| Block rules | Adding a rule |
+|---|---|
+| ![Block rules list: eight default rules for keys, emails, card numbers, Thai IDs and phone numbers, private keys](docs/images/rules.png) | ![Add-rule drawer: a project codename pattern, validated, with a live preview of the match](docs/images/rule-editor.png) |
+
+**Every prompt, with who sent it and why it was stopped.** Activity is the live audit log. Users are
+token hashes; matched secrets are stored masked (`41****…11`).
+
+| Activity | One blocked Kiro chat |
+|---|---|
+| ![Activity: allowed and blocked Kiro and AI-route requests with rule, user, masked prompt and latency](docs/images/activity.png) | ![Request details: a Kiro chat blocked by the credit-card rule, with the masked card number](docs/images/activity-detail.png) |
+
+**Observability built in.** Traffic, latency, usage and traces come from Prometheus, Loki and Tempo
+through fixed server-side queries; each page links to Grafana for deeper digging.
+
+| Traffic | Latency: gateway vs upstream |
+|---|---|
+| ![Traffic: requests, blocks, rate limits and errors, requests per minute by route and by status code](docs/images/traffic.png) | ![Latency: Kiro chat p50/p95, gateway overhead under 10 ms, and where the time goes](docs/images/latency.png) |
+| **Usage** | **Trace of a blocked chat (2.8 ms, never reaches Kiro)** |
+| ![Usage: Kiro chats, AI calls, active users and tokens, chats over time and per user](docs/images/usage.png) | ![Trace detail: the APISIX phases of a blocked Kiro chat request](docs/images/trace-detail.png) |
+| **Traces** | **Grafana: Guardrails dashboard** |
+| ![Traces: recent requests with host, status and duration](docs/images/traces.png) | ![Grafana Guardrails dashboard: chats checked, blocked, block rate, blocks by rule, path and user, recent blocked prompts](docs/images/grafana-guardrails.png) |
+
+**The full APISIX dashboard, same sign-in.** The Gateway section is the stock Apache APISIX
+dashboard (routes, upstreams, consumers, SSL, plugins) using the server-side admin key.
+
+![APISIX routes: the three intercepted Kiro hosts, the OpenAI-compatible AI route and the mock LLM](docs/images/apisix-routes.png)
 
 ## Configuration
 
