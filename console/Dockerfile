@@ -28,10 +28,12 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 FROM python:3.12.15-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3
 # jq/gettext/curl/git/grep: scripts/build-policy.sh + apply.sh (run by the console on rule save),
 # the PCRE pattern check (grep -P) and the rule history (git, in the data dir).
-# Debian packages are not version-pinned (bookworm security updates must apply on rebuild);
-# reproducibility comes from the digest-pinned base image + a rebuild in CI on every release.
-# hadolint ignore=DL3008
+# Debian packages are not version-pinned, and pending bookworm security updates are applied
+# (the pinned base can lag behind them); reproducibility comes from the digest-pinned base image
+# and a rebuild + Trivy scan in CI on every release.
+# hadolint ignore=DL3005,DL3008
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends jq gettext-base curl git ca-certificates grep \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /console
