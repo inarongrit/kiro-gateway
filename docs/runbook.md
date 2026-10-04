@@ -44,7 +44,8 @@ Commands run from the repository root on the gateway host. On AWS, open a shell 
 
 On AWS, update the stack with the new `SourceRef`. The Auto Scaling group replaces the instance (the
 old one stops first, so expect about 10 minutes of downtime) and the new one re-attaches the data
-volume. The deploy fails, and CloudFormation rolls back, if the new instance does not report success.
+volume. The `PortalUnhealthy` / `ProxyUnhealthy` alarms fire during that window and clear by
+themselves a few minutes after the new instance is healthy. The deploy fails, and CloudFormation rolls back, if the new instance does not report success.
 
 APISIX upgrades: `apisix/config.yaml` lists every plugin explicitly (setting `plugins` replaces the
 defaults), so compare it with the new version's default list.
