@@ -64,6 +64,10 @@ expect "obs latency"                          200 "$(c "$B/api/obs/latency?hours
 expect "obs usage"                            200 "$(c "$B/api/obs/usage?hours=24")"; jq -c '{kiro_chats,ai_calls,active_users,ai_tokens}' "$J/out"
 expect "obs traces"                           200 "$(c "$B/api/obs/traces?hours=24&kind=chat&limit=5")"
 tid=$(jq -r '.traces[0].trace_id // empty' "$J/out")
+for _ in 1 2 3 4 5 6; do   # Tempo search lags ingest by ~10-20 s on a freshly started stack
+  [[ -n "$tid" ]] && break
+  sleep 5; c "$B/api/obs/traces?hours=24&kind=chat&limit=5" >/dev/null; tid=$(jq -r '.traces[0].trace_id // empty' "$J/out")
+done
 [[ -n "$tid" ]] && expect "obs trace detail"  200 "$(c "$B/api/obs/traces/$tid")" || no "no traces in last 24h"
 expect "obs trace id is validated"            422 "$(c "$B/api/obs/traces/not-hex")"
 expect "obs window is bounded"                422 "$(c "$B/api/obs/traffic?hours=99999")"

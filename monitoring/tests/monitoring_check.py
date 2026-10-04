@@ -28,7 +28,8 @@ def sh(cmd, **kw):
 
 
 def internal(url):  # query a service on the Docker network (none have published ports)
-    r = sh(f"docker run --rm --network kiro-gateway_gw curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b -s -H 'Accept: application/json' {json.dumps(url)}")
+    net = os.environ.get("COMPOSE_PROJECT_NAME", "kiro-gateway") + "_gw"
+    r = sh(f"docker run --rm --network {net} curlimages/curl:8.10.1@sha256:d9b4541e214bcd85196d6e92e2753ac6d0ea699f0af5741f8c6cccbfcf00ef4b -s -H 'Accept: application/json' {json.dumps(url)}")
     return json.loads(r.stdout or "null")
 
 
