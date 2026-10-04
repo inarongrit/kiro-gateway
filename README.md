@@ -52,7 +52,7 @@ the client machine changes (`scripts/kiro-via-gateway` sets both for one shell).
 Requirements: Docker with Compose v2, `openssl`, `jq`, `envsubst` (gettext), `python3`, `git`.
 
 ```bash
-git clone https://github.com/<owner>/kiro-gateway.git && cd kiro-gateway
+git clone https://github.com/inarongrit/kiro-gateway.git && cd kiro-gateway
 scripts/init.sh            # once: .env secrets, CA + certificates, portal sign-in, data/ (idempotent)
 docker compose up -d       # builds the console (incl. the portal) and ml-guard images on first run
 scripts/apply.sh           # pushes routes, policy and certificates to APISIX
@@ -138,7 +138,7 @@ waits for the instance to report success).
 ```bash
 cd deploy && npm ci
 npx cdk deploy KiroGateway --parameters ProxyAllowedCidr=10.40.0.0/16 \
-  -c repoUrl=https://github.com/<owner>/kiro-gateway.git -c repoRef=v1.0.0
+  -c repoUrl=https://github.com/inarongrit/kiro-gateway.git -c repoRef=v1.0.0
 # Deploy this working copy instead of a git ref (needs `cdk bootstrap` once per account/region):
 npx cdk deploy KiroGateway -c source=asset --parameters ProxyAllowedCidr=10.40.0.0/16
 ```
@@ -193,7 +193,7 @@ Security model: [docs/security.md](docs/security.md).
 | `BEDROCK_GUARDRAIL_ID`, `BEDROCK_GUARDRAIL_VERSION`, `AWS_REGION` | empty, `1`, `us-east-1` | Bedrock layer. Empty ID = the layer reports unavailable and the fail mode applies. |
 | `PROMPT_LOG` | `masked` | `masked`: prompts stored with rule matches masked. `off`: no prompt text stored. |
 | `OPENAI_API_KEY` | unset | Use OpenAI instead of the mock LLM on the AI route (`scripts/apply.sh` after setting). |
-| `KGW_CONSOLE_IMAGE`, `KGW_ML_GUARD_IMAGE` | local builds | Use released images, e.g. `ghcr.io/<owner>/kiro-gateway-console:1.0.0`, then `docker compose pull`. |
+| `KGW_CONSOLE_IMAGE`, `KGW_ML_GUARD_IMAGE` | local builds | Use released images, e.g. `ghcr.io/inarongrit/kiro-gateway-console:1.0.0`, then `docker compose pull`. |
 
 Rules start from `config/guardrails.default.json` and live in `data/guardrails.json` (its own git
 history, written by the portal). Intercepted hosts: `squid/hosts`, with matching `config/routes` and
