@@ -74,9 +74,31 @@ scripts/apply.sh           # pushes routes, policy and certificates to APISIX
 
 - Check everything end to end: `scripts/verify.sh`.
 
-Everything binds to `127.0.0.1` by default. To serve other machines, set `KGW_BIND_ADDR`,
-`KGW_PROXY_BIND_ADDR`, `CONSOLE_ALLOW_CIDRS`, `KGW_PROXY_ALLOW_CIDRS` and `KGW_PUBLIC_NAMES` in
-`.env`, re-run `scripts/init.sh`, then `docker compose up -d` (see [Configuration](#configuration)).
+### Serving other machines
+
+Out of the box everything binds to `127.0.0.1`, so a fresh clone exposes nothing until you decide
+who may connect. The AWS stack sets these for you (see [Deploy to AWS](#deploy-to-aws)). On your
+own server, set them in `.env`:
+
+```bash
+# Listen on every interface (or one specific address)
+KGW_BIND_ADDR=0.0.0.0            # portal, https://<server>:9180/
+KGW_PROXY_BIND_ADDR=0.0.0.0      # Kiro proxy, http://<server>:3128
+# Who may connect. Keep the first two entries: they are this host's own scripts and Docker.
+CONSOLE_ALLOW_CIDRS=127.0.0.0/8,172.30.0.1/32,10.20.0.0/16     # + your admin / VPN network
+KGW_PROXY_ALLOW_CIDRS=10.20.0.0/16                              # your developers' network
+# Names clients use for the portal, so its TLS certificate matches
+KGW_PUBLIC_NAMES=gateway.example.internal,10.20.1.5
+```
+
+Then apply them: `scripts/init.sh` (rebuilds the proxy allow list; delete `pki/admin/` first if you
+changed `KGW_PUBLIC_NAMES`, so the portal certificate is reissued), `docker compose up -d`, and open
+the same ports in your host firewall or security group. Both allow lists are enforced by the
+gateway itself (the portal checks every request; Squid has an ACL), so they still apply behind a
+load balancer that preserves client IPs. Behind a reverse proxy or CDN that does not, see
+`CONSOLE_TRUSTED_PROXY_CIDRS`.
+
+Never open the proxy to the internet (`0.0.0.0/0`): anyone who reaches it could use it.
 
 To turn on the Bedrock layer, create a guardrail (definition in
 `docs/evaluation/bedrock-guardrail.json`, or let the AWS stack create one), set
@@ -229,9 +251,9 @@ dashboard (routes, upstreams, consumers, SSL, plugins) using the server-side adm
 |---|---|---|
 | `APISIX_ADMIN_KEY`, `AI_GW_DEMO_KEY`, `AI_GW_MOCK_TOKEN` | generated | Admin API key, demo consumer key for the AI route, mock LLM token. |
 | `CONSOLE_USER`, `CONSOLE_PASSWORD_HASH` | generated | Portal sign-in (scrypt hash). Change with `scripts/console-passwd.sh <user> --stdin`. |
-| `KGW_BIND_ADDR`, `KGW_PORT` | `127.0.0.1`, `9180` | Where the portal listens. |
-| `KGW_PROXY_BIND_ADDR` | `127.0.0.1` | Where Squid's :3128 listens. |
-| `CONSOLE_ALLOW_CIDRS` | `127.0.0.0/8,172.30.0.1/32` | Networks allowed to use the portal (keep the defaults; they are the host's own scripts). |
+| `KGW_BIND_ADDR`, `KGW_PORT` | `127.0.0.1`, `9180` | Where the portal listens. `0.0.0.0` to serve other machines ([how](#serving-other-machines)). |
+| `KGW_PROXY_BIND_ADDR` | `127.0.0.1` | Where Squid's :3128 listens. `0.0.0.0` to serve other machines. |
+| `CONSOLE_ALLOW_CIDRS` | `127.0.0.0/8,172.30.0.1/32` | Networks allowed to use the portal. Append yours; keep the two defaults (the host's own scripts and Docker). |
 | `CONSOLE_TRUSTED_PROXY_CIDRS` | empty | Only behind CloudFront: networks whose `CloudFront-Viewer-Address` header is trusted. |
 | `KGW_PROXY_ALLOW_CIDRS` | empty (this host only) | Networks allowed to use the proxy. |
 | `KGW_PUBLIC_NAMES` | empty | Extra DNS names / IPs for the portal certificate. |
