@@ -46,8 +46,14 @@ for (const [mode, t] of Object.entries(templates)) {
     t.hasResource('AWS::EC2::Volume', { DeletionPolicy: 'Snapshot' });
     // only the two load balancers may reach the instance
     const ingress = Object.values(t.findResources('AWS::EC2::SecurityGroupIngress'));
-    assert.equal(ingress.length, 2);
-    for (const r of ingress) assert.ok(r.Properties.SourceSecurityGroupId, 'ingress from a load balancer SG only');
+    const fromSg = ingress.filter((r) => r.Properties.SourceSecurityGroupId);
+    assert.equal(fromSg.length, 2, 'instance: ingress from its two load balancer SGs only');
+    // the rest are the optional extra portal networks: 443 only, created only when the parameter is set
+    for (const r of ingress.filter((x) => !x.Properties.SourceSecurityGroupId)) {
+      assert.equal(r.Properties.FromPort, 443);
+      assert.match(r.Condition, /^HasPortalCidr[23]$/);
+      assert.match(JSON.stringify(r.Properties.CidrIp), /PortalAllowedCidr[23]/);
+    }
   });
 
   test(`${mode} VPC: single gateway, replaced in place, deploy waits for the bootstrap`, () => {

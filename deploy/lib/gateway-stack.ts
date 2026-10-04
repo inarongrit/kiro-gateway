@@ -54,6 +54,11 @@ export class KiroGatewayStack extends Stack {
       description: 'IPv4 CIDR allowed to reach the portal over HTTPS (e.g. your office egress /24). 0.0.0.0/0 is refused.',
       allowedPattern: CIDR_PATTERN, constraintDescription: 'an IPv4 CIDR such as 203.0.113.0/24',
     });
+    // Up to two more portal networks (e.g. office + home); empty = unused.
+    const extraPortalCidrs = [2, 3].map((n) => new CfnParameter(this, `PortalAllowedCidr${n}`, {
+      default: '', description: `Optional additional IPv4 CIDR allowed to reach the portal (slot ${n}). Leave empty if unused.`,
+      allowedPattern: `^$|${CIDR_PATTERN}`, constraintDescription: 'empty, or an IPv4 CIDR such as 198.51.100.0/24',
+    }));
     const proxyCidr = new CfnParameter(this, 'ProxyAllowedCidr', {
       description: 'IPv4 CIDR of the Kiro clients that may use the proxy (port 3128 on the internal load balancer).',
       allowedPattern: CIDR_PATTERN, constraintDescription: 'an IPv4 CIDR such as 10.0.0.0/8',
@@ -90,7 +95,10 @@ export class KiroGatewayStack extends Stack {
       assertions: [{
         assert: Fn.conditionNot(Fn.conditionEquals(portalCidr.valueAsString, '0.0.0.0/0')),
         assertDescription: 'PortalAllowedCidr must not be 0.0.0.0/0: restrict the portal to the networks that administer it.',
-      }, {
+      }, ...extraPortalCidrs.map((c) => ({
+        assert: Fn.conditionNot(Fn.conditionEquals(c.valueAsString, '0.0.0.0/0')),
+        assertDescription: `${c.logicalId} must not be 0.0.0.0/0.`,
+      })), {
         assert: Fn.conditionNot(Fn.conditionEquals(proxyCidr.valueAsString, '0.0.0.0/0')),
         assertDescription: 'ProxyAllowedCidr must not be 0.0.0.0/0: an open proxy can be abused by anyone who reaches it.',
       }],
@@ -138,6 +146,20 @@ export class KiroGatewayStack extends Stack {
       vpc, allowAllOutbound: false, description: 'Kiro Gateway portal load balancer: HTTPS from PortalAllowedCidr',
     });
     portalLbSg.addIngressRule(ec2.Peer.ipv4(portalCidr.valueAsString), ec2.Port.tcp(443), 'portal users');
+    extraPortalCidrs.forEach((c, i) => {
+      const used = new CfnCondition(this, `HasPortalCidr${i + 2}`, {
+        expression: Fn.conditionNot(Fn.conditionEquals(c.valueAsString, '')),
+      });
+      const rule = new ec2.CfnSecurityGroupIngress(this, `PortalLbIngress${i + 2}`, {
+        groupId: portalLbSg.securityGroupId, ipProtocol: 'tcp', fromPort: 443, toPort: 443,
+        cidrIp: c.valueAsString, description: `portal users (slot ${i + 2})`,
+      });
+      rule.cfnOptions.condition = used;
+      Validations.of(rule).acknowledge({
+        id: 'AwsSolutions::AwsSolutions-EC23',
+        reason: 'Ingress CIDR is a template parameter; the NotOpenToTheWorld rule refuses 0.0.0.0/0.',
+      });
+    });
     const proxyLbSg = new ec2.SecurityGroup(this, 'ProxyLbSg', {
       vpc, allowAllOutbound: false, description: 'Kiro Gateway proxy load balancer: port 3128 from ProxyAllowedCidr',
     });
@@ -296,7 +318,7 @@ export class KiroGatewayStack extends Stack {
     const env: string[] = [
       `KGW_STACK=${Aws.STACK_NAME}`, `KGW_REGION=${Aws.REGION}`, `KGW_ASG_LOGICAL_ID=${asgLogicalId}`,
       `KGW_VOLUME_ID=${volume.ref}`, `KGW_LOG_GROUP=${logGroup.logGroupName}`,
-      `KGW_PORTAL_CIDR=${portalCidr.valueAsString}`, `KGW_PROXY_CIDR=${proxyCidr.valueAsString}`,
+      `KGW_PORTAL_CIDR=${[portalCidr, ...extraPortalCidrs].map((c) => c.valueAsString).join(',')}`, `KGW_PROXY_CIDR=${proxyCidr.valueAsString}`,
       `KGW_PORTAL_DNS=${portalLb.loadBalancerDnsName}`,
       `KGW_GUARDRAIL_ID=${guardrail.attrGuardrailId}`, `KGW_GUARDRAIL_VERSION=${guardrailVersion.attrVersion}`,
       `KGW_CONSOLE_SECRET=${consoleLogin.secretArn}`, `KGW_CA_SECRET=${caBackup.secretArn}`,
@@ -386,7 +408,7 @@ export class KiroGatewayStack extends Stack {
     this.templateOptions.metadata = {
       'AWS::CloudFormation::Interface': {
         ParameterGroups: [
-          { Label: { default: 'Access' }, Parameters: ['PortalAllowedCidr', 'ProxyAllowedCidr'] },
+          { Label: { default: 'Access' }, Parameters: ['PortalAllowedCidr', 'PortalAllowedCidr2', 'PortalAllowedCidr3', 'ProxyAllowedCidr'] },
           ...groups.map((g) => ({ Label: { default: g.label }, Parameters: g.parameters })),
           { Label: { default: 'Instance and storage' }, Parameters: ['InstanceType', 'DataVolumeSize', 'SnapshotRetentionDays'] },
           ...(props.source === 'git' ? [{ Label: { default: 'Source' }, Parameters: ['SourceRepoUrl', 'SourceRef'] }] : []),
