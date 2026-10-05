@@ -5,6 +5,7 @@ import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { DefaultStackSynthesizer } from 'aws-cdk-lib';
 import { KiroGatewayStack } from '../lib/gateway-stack';
+import { KiroGatewayPortalWafStack } from '../lib/portal-waf';
 
 function synth(vpcMode: 'new' | 'existing', source: 'git' | 'asset' = 'git') {
   const app = new App();
@@ -124,4 +125,18 @@ test('asset mode: the uploaded source excludes secrets and state', () => {
   const ud = JSON.stringify(t.toJSON().Resources.LaunchTemplate04EC5460.Properties.LaunchTemplateData.UserData);
   assert.match(ud, /KGW_SOURCE_S3=/);
   assert.doesNotMatch(ud, /KGW_SOURCE_REPO=/);
+});
+
+test('portal WAF stack: same web ACL as the gateway, us-east-1 only, ARN output', () => {
+  const t = Template.fromStack(new KiroGatewayPortalWafStack(new App(), 'W', {
+    analyticsReporting: false, synthesizer: new DefaultStackSynthesizer({ generateBootstrapVersionRule: false }),
+  }));
+  const acl = Object.values(t.findResources('AWS::WAFv2::WebACL'));
+  const inGateway = Object.values(templates.new.findResources('AWS::WAFv2::WebACL'));
+  assert.equal(acl.length, 1);
+  assert.deepEqual(acl[0].Properties, inGateway[0].Properties);
+  const json = t.toJSON();
+  assert.match(JSON.stringify(json.Rules.InUsEast1), /us-east-1/);
+  assert.ok(json.Outputs.WebAclArn);
+  assert.doesNotMatch(JSON.stringify(json), /\b\d{12}\b|cdk-hnb659fds|AWS::CDK::Metadata/);
 });

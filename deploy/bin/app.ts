@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Kiro Gateway CDK app. Two stacks, same gateway:
+ * Kiro Gateway CDK app. Two stacks, same gateway, plus the portal WAF for other regions:
  *   KiroGateway             creates a VPC (2 AZs, 1 NAT gateway)
  *   KiroGatewayExistingVpc  uses a VPC + subnets you pass as parameters
+ *   KiroGatewayPortalWaf    the portal web ACL alone, deployed in us-east-1 for a gateway elsewhere
  *
  * Context (-c key=value):
  *   source=git|asset  git (default): the instance clones repoUrl@repoRef; the template has no CDK
@@ -13,6 +14,7 @@
 import { App, DefaultStackSynthesizer, Validations } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { KiroGatewayStack } from '../lib/gateway-stack';
+import { KiroGatewayPortalWafStack } from '../lib/portal-waf';
 
 const app = new App();
 const source = app.node.tryGetContext('source') === 'asset' ? 'asset' : 'git';
@@ -27,4 +29,5 @@ const common = {
 
 new KiroGatewayStack(app, 'KiroGateway', { ...common, vpcMode: 'new' });
 new KiroGatewayStack(app, 'KiroGatewayExistingVpc', { ...common, vpcMode: 'existing' });
+new KiroGatewayPortalWafStack(app, 'KiroGatewayPortalWaf', { analyticsReporting: false, synthesizer: common.synthesizer });
 Validations.of(app).addPlugins(new AwsSolutionsChecks(app, { verbose: true }));

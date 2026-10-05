@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="272" height="40" viewBox="0 0 272 40" role="img" aria-label="Create stack in CloudFormation (ap-southeast-1)">
+  <title>Create stack in CloudFormation (ap-southeast-1)</title>
+  <rect width="272" height="40" rx="8" fill="#4f46e5"/>
+  <g fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M14 15.5 22 11l8 4.5-8 4.5z"/>
+    <path d="M14 20.5 22 25l8-4.5"/>
+    <path d="M14 25.5 22 30l8-4.5"/>
+  </g>
+  <text x="40" y="25.5" fill="#fff" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600">Create stack (ap-southeast-1)</text>
+</svg>

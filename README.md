@@ -146,8 +146,9 @@ What the stack creates:
 1. **Download the template** (new VPC). For your own VPC, use
    [kiro-gateway-existing-vpc.template.json](https://github.com/inarongrit/kiro-gateway/releases/latest/download/kiro-gateway-existing-vpc.template.json).
    Both come from the [latest release](https://github.com/inarongrit/kiro-gateway/releases/latest).
-2. **Create stack** opens the CloudFormation console in your account (us-east-1; switch region at
-   the top right if needed, see [supported regions](#configuration)). Choose **Choose an existing
+2. **Create stack** opens the CloudFormation console in your account in us-east-1 (for another
+   region, see [other regions](#other-regions-eg-singapore-ap-southeast-1) and the
+   [supported regions](#configuration)). Choose **Choose an existing
    template → Upload a template file**, pick the downloaded file, then **Next**.
 3. Name the stack (e.g. `KiroGateway`), set `ProxyAllowedCidr` to the network of your Kiro users,
    leave the rest at their defaults, acknowledge the IAM capability and create the stack.
@@ -162,21 +163,56 @@ aws cloudformation deploy --region us-east-1 --stack-name KiroGateway \
   --parameter-overrides ProxyAllowedCidr=10.40.0.0/16
 ```
 
-The template has no CDK assets and needs no `cdk bootstrap`. The instance clones `SourceRepoUrl` at
+The templates have no CDK assets and need no `cdk bootstrap`. The instance clones `SourceRepoUrl` at
 `SourceRef` (set to the release tag) and builds the images on first boot (about 10 minutes; the stack
 waits for the instance to report success).
+
+#### Other regions, e.g. Singapore (ap-southeast-1)
+
+CloudFront only accepts AWS WAF web ACLs created in us-east-1, so outside us-east-1 the portal's web
+ACL is a small stack of its own there, and the gateway goes in your region:
+
+1. In **us-east-1**, create a stack (e.g. `KiroGatewayPortalWaf`) from
+   [kiro-gateway-portal-waf.template.json](https://github.com/inarongrit/kiro-gateway/releases/latest/download/kiro-gateway-portal-waf.template.json).
+   It has no parameters; copy its `WebAclArn` output.
+2. In your region, create the gateway stack as above, with `CloudFrontWebAclArn` set to that ARN.
+
+[![Create stack in CloudFormation (ap-southeast-1)](docs/images/button-create-stack-ap-southeast-1.svg)](https://console.aws.amazon.com/cloudformation/home?region=ap-southeast-1#/stacks/create)
+
+```bash
+curl -fsSLO https://github.com/inarongrit/kiro-gateway/releases/latest/download/kiro-gateway-portal-waf.template.json
+aws cloudformation deploy --region us-east-1 --stack-name KiroGatewayPortalWaf \
+  --template-file kiro-gateway-portal-waf.template.json
+ACL=$(aws cloudformation describe-stacks --region us-east-1 --stack-name KiroGatewayPortalWaf \
+  --query "Stacks[0].Outputs[?OutputKey=='WebAclArn'].OutputValue" --output text)
+aws cloudformation deploy --region ap-southeast-1 --stack-name KiroGateway \
+  --template-file kiro-gateway.template.json --capabilities CAPABILITY_IAM \
+  --parameter-overrides ProxyAllowedCidr=10.40.0.0/16 CloudFrontWebAclArn="$ACL"
+```
+
+The portal, logs and audit data stay in your region. Bedrock evaluates prompts through the
+cross-region guardrail profile of your geography (`apac` for ap-southeast-1: APAC regions only).
+Delete the gateway stack before the WAF stack.
 
 ### Option B: CDK
 
 ```bash
 cd deploy && npm ci
 npx cdk deploy KiroGateway --parameters ProxyAllowedCidr=10.40.0.0/16 \
-  -c repoUrl=https://github.com/inarongrit/kiro-gateway.git -c repoRef=v1.0.0
+  -c repoUrl=https://github.com/inarongrit/kiro-gateway.git -c repoRef=v1.1.0
 # Deploy this working copy instead of a git ref (needs `cdk bootstrap` once per account/region):
 npx cdk deploy KiroGateway -c source=asset --parameters ProxyAllowedCidr=10.40.0.0/16
 ```
 
 `KiroGatewayExistingVpc` deploys into your VPC instead (two private subnets with NAT in different AZs).
+Outside us-east-1, deploy `KiroGatewayPortalWaf` there first and pass its output:
+
+```bash
+AWS_REGION=us-east-1 npx cdk deploy KiroGatewayPortalWaf --outputs-file waf.json
+AWS_REGION=ap-southeast-1 npx cdk deploy KiroGateway --parameters ProxyAllowedCidr=10.40.0.0/16 \
+  --parameters CloudFrontWebAclArn="$(jq -r .KiroGatewayPortalWaf.WebAclArn waf.json)" \
+  -c repoUrl=https://github.com/inarongrit/kiro-gateway.git -c repoRef=v1.1.0
+```
 
 ### After the deploy
 
@@ -268,16 +304,16 @@ dashboard (routes, upstreams, consumers, SSL, plugins) using the server-side adm
 | `BEDROCK_GUARDRAIL_ID`, `BEDROCK_GUARDRAIL_VERSION`, `AWS_REGION` | empty, `1`, `us-east-1` | Bedrock layer. Empty ID = the layer reports unavailable and the fail mode applies. |
 | `PROMPT_LOG` | `masked` | `masked`: prompts stored with rule matches masked. `off`: no prompt text stored. |
 | `OPENAI_API_KEY` | unset | Use OpenAI instead of the mock LLM on the AI route (`scripts/apply.sh` after setting). |
-| `KGW_CONSOLE_IMAGE`, `KGW_ML_GUARD_IMAGE` | local builds | Use released images, e.g. `ghcr.io/inarongrit/kiro-gateway-console:1.0.0`, then `docker compose pull`. |
+| `KGW_CONSOLE_IMAGE`, `KGW_ML_GUARD_IMAGE` | local builds | Use released images, e.g. `ghcr.io/inarongrit/kiro-gateway-console:1.1.0`, then `docker compose pull`. |
 
 Rules start from `config/guardrails.default.json` and live in `data/guardrails.json` (its own git
 history, written by the portal). Intercepted hosts: `squid/hosts`, with matching `config/routes` and
 `config/upstreams` (`scripts/intercept-host.sh <host>` adds one). The defaults cover kiro-cli's
 `us-east-1` endpoints; re-check after Kiro upgrades.
 
-AWS stack parameters: `ProxyAllowedCidr`, `CloudFrontWebAclArn` (only outside us-east-1, see the
-parameter description), `InstanceType`, `DataVolumeSize`, `SnapshotRetentionDays`, `AlarmEmail`,
-`SourceRepoUrl`, `SourceRef`, and for the existing-VPC stack `VpcId`, `AvailabilityZone`, `PrivateSubnetId`,
+AWS stack parameters: `ProxyAllowedCidr`, `CloudFrontWebAclArn` (only outside us-east-1: the
+`WebAclArn` output of the portal WAF stack, see [other regions](#other-regions-eg-singapore-ap-southeast-1)),
+`InstanceType`, `DataVolumeSize`, `SnapshotRetentionDays`, `AlarmEmail`, `SourceRepoUrl`, `SourceRef`, and for the existing-VPC stack `VpcId`, `AvailabilityZone`, `PrivateSubnetId`,
 `PrivateSubnet2Id`. Supported regions: us-east-1, us-east-2, us-west-2, eu-central-1, eu-west-1,
 eu-west-3, ap-northeast-1, ap-south-1, ap-southeast-1, ap-southeast-2.
 

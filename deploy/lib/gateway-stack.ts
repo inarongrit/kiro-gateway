@@ -20,9 +20,9 @@ import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import { GUARDRAIL } from './guardrail-policy';
+import { portalWebAcl } from './portal-waf';
 
 export interface KiroGatewayStackProps extends StackProps {
   /** 'new': the stack creates a VPC. 'existing': VPC and subnets are template parameters. */
@@ -64,7 +64,8 @@ export class KiroGatewayStack extends Stack {
     const webAclParam = new CfnParameter(this, 'CloudFrontWebAclArn', {
       default: '',
       description: 'Leave empty in us-east-1: the stack creates the AWS WAF web ACL for the portal. In other regions, '
-        + 'pass the ARN of a CLOUDFRONT-scope web ACL created in us-east-1 (CloudFront only accepts those).',
+        + 'deploy kiro-gateway-portal-waf.template.json in us-east-1 first and paste its WebAclArn output here '
+        + '(CloudFront only accepts web ACLs created in us-east-1).',
       allowedPattern: '^$|^arn:aws[a-z-]*:wafv2:us-east-1:\\d{12}:global/webacl/\\S+$',
     });
     const proxyCidr = new CfnParameter(this, 'ProxyAllowedCidr', {
@@ -395,7 +396,7 @@ export class KiroGatewayStack extends Stack {
         assertDescription: 'Outside us-east-1, set CloudFrontWebAclArn (CloudFront web ACLs must be created in us-east-1).',
       }],
     });
-    const webAcl = this.portalWebAcl();
+    const webAcl = portalWebAcl(this, 'PortalWebAcl');
     webAcl.cfnOptions.condition = createAcl;
     const distribution = new cloudfront.Distribution(this, 'Portal', {
       comment: `${Aws.STACK_NAME} portal`,
@@ -480,38 +481,6 @@ export class KiroGatewayStack extends Stack {
       { id: 'AwsSolutions-ELB2', reason: 'Internal ALB behind CloudFront; the gateway logs every request itself (console log, CloudWatch).' },
     );
     this.suppressNagFindings(role, asg, [proxyLb], [consoleLogin, caBackup, originSecret], alarmTopic, snapshotRole);
-  }
-
-  /**
-   * AWS WAF for the portal (CLOUDFRONT scope, so it can only be created in us-east-1).
-   * Rate limits per viewer IP, AWS IP reputation, known bad inputs and the common rule set. The
-   * common rules' BODY/size checks run in COUNT mode: prompts, rule patterns and Grafana queries
-   * legitimately contain code, regexes and long bodies, and inspecting them is the gateway's job.
-   */
-  private portalWebAcl(): wafv2.CfnWebACL {
-    const vis = (name: string) => ({ cloudWatchMetricsEnabled: true, metricName: name, sampledRequestsEnabled: true });
-    const managed = (name: string, priority: number, countRules: string[] = []) => ({
-      name, priority, overrideAction: { none: {} }, visibilityConfig: vis(name),
-      statement: { managedRuleGroupStatement: {
-        vendorName: 'AWS', name, ruleActionOverrides: countRules.map((r) => ({ name: r, actionToUse: { count: {} } })),
-      } },
-    });
-    return new wafv2.CfnWebACL(this, 'PortalWebAcl', {
-      scope: 'CLOUDFRONT', defaultAction: { allow: {} }, visibilityConfig: vis('kiro-gateway-portal'),
-      description: 'Kiro Gateway portal: rate limits + AWS managed rules',
-      rules: [
-        { name: 'login-rate-limit', priority: 0, action: { block: {} }, visibilityConfig: vis('login-rate-limit'),
-          statement: { rateBasedStatement: { limit: 20, evaluationWindowSec: 300, aggregateKeyType: 'IP',
-            scopeDownStatement: { byteMatchStatement: { fieldToMatch: { uriPath: {} }, positionalConstraint: 'EXACTLY',
-              searchString: '/api/login', textTransformations: [{ priority: 0, type: 'NONE' }] } } } } },
-        { name: 'rate-limit', priority: 1, action: { block: {} }, visibilityConfig: vis('rate-limit'),
-          statement: { rateBasedStatement: { limit: 3000, evaluationWindowSec: 300, aggregateKeyType: 'IP' } } },
-        managed('AWSManagedRulesAmazonIpReputationList', 2),
-        managed('AWSManagedRulesKnownBadInputsRuleSet', 3),
-        managed('AWSManagedRulesCommonRuleSet', 4, ['SizeRestrictions_BODY', 'SizeRestrictions_QUERYSTRING',
-          'CrossSiteScripting_BODY', 'GenericLFI_BODY', 'GenericRFI_BODY', 'EC2MetaDataSSRF_BODY']),
-      ],
-    });
   }
 
   /** Every cdk-nag exception, with the reason it is acceptable here. */
