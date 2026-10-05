@@ -138,17 +138,25 @@ What the stack creates:
   notifications to an SNS topic (optional e-mail). cdk-nag (AWS Solutions) clean; every exception
   carries its reason in `deploy/lib/gateway-stack.ts`.
 
-### Option A: CloudFormation template (Launch Stack)
+### Option A: CloudFormation template (no tools needed)
 
-Each release attaches `kiro-gateway.template.json` (new VPC) and `kiro-gateway-existing-vpc.template.json`
-to the GitHub release. CloudFormation reads templates from S3, so upload one to a bucket you own and
-open the console with it, or use the CLI:
+[![Download the template](docs/images/button-download-template.svg)](https://github.com/inarongrit/kiro-gateway/releases/latest/download/kiro-gateway.template.json)
+[![Create stack in CloudFormation](docs/images/button-create-stack.svg)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create)
+
+1. **Download the template** (new VPC). For your own VPC, use
+   [kiro-gateway-existing-vpc.template.json](https://github.com/inarongrit/kiro-gateway/releases/latest/download/kiro-gateway-existing-vpc.template.json).
+   Both come from the [latest release](https://github.com/inarongrit/kiro-gateway/releases/latest).
+2. **Create stack** opens the CloudFormation console in your account (us-east-1; switch region at
+   the top right if needed, see [supported regions](#configuration)). Choose **Choose an existing
+   template → Upload a template file**, pick the downloaded file, then **Next**.
+3. Name the stack (e.g. `KiroGateway`), set `ProxyAllowedCidr` to the network of your Kiro users,
+   leave the rest at their defaults, acknowledge the IAM capability and create the stack.
+
+No S3 bucket of your own is needed: the console keeps uploaded templates in a bucket it manages in
+your account. Or from the CLI (templates under 51,200 bytes deploy directly; ours are ~47 KB):
 
 ```bash
-aws s3 cp kiro-gateway.template.json s3://<bucket>/kiro-gateway.template.json
-# Launch Stack link (us-east-1):
-# https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/create/review?stackName=KiroGateway&templateURL=https://<bucket>.s3.amazonaws.com/kiro-gateway.template.json
-
+curl -fsSLO https://github.com/inarongrit/kiro-gateway/releases/latest/download/kiro-gateway.template.json
 aws cloudformation deploy --region us-east-1 --stack-name KiroGateway \
   --template-file kiro-gateway.template.json --capabilities CAPABILITY_IAM \
   --parameter-overrides ProxyAllowedCidr=10.40.0.0/16

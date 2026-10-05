@@ -63,7 +63,7 @@ jobs:
 
   templates:
     # CloudFormation templates for this tag (SourceRepoUrl / SourceRef default to this repo + tag),
-    # attached to the GitHub release. Upload one to S3 to use it as a Launch Stack link.
+    # attached to the GitHub release (the README links releases/latest/download/<file>).
     runs-on: ubuntu-24.04
     needs: images
     permissions:
